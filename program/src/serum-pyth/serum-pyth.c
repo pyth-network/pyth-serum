@@ -1,6 +1,9 @@
 #include <solana_sdk.h>
 
-typedef struct SerumAccountFlags
+#define SERUM_NODE_TYPE_INNER 1
+#define SERUM_NODE_TYPE_LEAF  2
+
+typedef struct serum_flags
 {
   uint64_t Initialized  : 1;
   uint64_t Market       : 1;
@@ -11,53 +14,44 @@ typedef struct SerumAccountFlags
   uint64_t Asks         : 1;
   uint64_t Disabled     : 1;
   uint64_t Reserved     : 56;
-} SerumAccountFlags;
-static_assert(sizeof(SerumAccountFlags) == 8, "incorrect size of SerumAccountFlags");
+} serum_flags_t;
+static_assert(sizeof(serum_flags_t) == 8, "incorrect size of serum_flags_t");
 
-typedef struct MarketStateHeader
+typedef struct serum_market
 {
   SolPubkey OwnAddress;
-  uint64_t VaultSignerNonce;
+  uint64_t  VaultSignerNonce;
   SolPubkey BaseMint;
   SolPubkey QuoteMint;
   SolPubkey BaseVault;
-  uint64_t BaseDepositsTotal;
-  uint64_t BaseFeesAccrued;
+  uint64_t  BaseDepositsTotal;
+  uint64_t  BaseFeesAccrued;
   SolPubkey QuoteVault;
-  uint64_t QuoteDepositsTotal;
-  uint64_t QuoteFeesAccrued;
-  uint64_t QuoteDustThreshold;
+  uint64_t  QuoteDepositsTotal;
+  uint64_t  QuoteFeesAccrued;
+  uint64_t  QuoteDustThreshold;
   SolPubkey RequestQueue;
   SolPubkey EventQueue;
   SolPubkey Bids;
   SolPubkey Asks;
-  uint64_t BaseLotSize;
-  uint64_t QuoteLotSize;
-  uint64_t FeeRateBps;
-  uint64_t ReferrerRebatesAccrued;
-} MarketStateHeader;
-static_assert(sizeof(MarketStateHeader) == 368, "incorrect size of MarketStateHeader");
+  uint64_t  BaseLotSize;
+  uint64_t  QuoteLotSize;
+  uint64_t  FeeRateBps;
+  uint64_t  ReferrerRebatesAccrued;
+} serum_market_t;
+static_assert(sizeof(serum_market_t) == 368, "incorrect size of serum_market_t");
 
-typedef struct BookHeader
+typedef struct serum_book
 {
   uint64_t BumpIndex;
   uint64_t FreeListLen;
   uint32_t FreeListHead;
   uint32_t Root;
   uint64_t LeafCount;
-} BookHeader;
-static_assert(sizeof(BookHeader) == 32, "incorrect size of BookHeader");
+} serum_book_t;
+static_assert(sizeof(serum_book_t) == 32, "incorrect size of serum_book_t");
 
-enum NodeTag
-{
-  eUninitialized = 0,
-  eInnerNode = 1,
-  eLeafNode = 2,
-  eFreeNode = 3,
-  eLastFreeNode = 4
-};
-
-typedef struct InnerNode
+typedef struct serum_node_inner
 {
   uint32_t Tag;
   uint32_t PrefixLen;
@@ -65,301 +59,79 @@ typedef struct InnerNode
   uint64_t Key1;
   uint32_t ChildA;
   uint32_t ChildB;
-} InnerNode;
-static_assert(sizeof(InnerNode) == 32, "incorrect size of InnerNode");
+} serum_node_inner_t;
+static_assert(sizeof(serum_node_inner_t) == 32, "incorrect size of serum_node_inner_t");
 
-typedef struct LeafNode
+typedef struct serum_node_leaf
 {
-  uint32_t Tag;
-  uint8_t OwnerSlot;
-  uint8_t FeeTier;
-  uint8_t Padding[2];
-  uint64_t Key0;
-  uint64_t Key1;
+  uint32_t  Tag;
+  uint8_t   OwnerSlot;
+  uint8_t   FeeTier;
+  uint8_t   Padding[2];
+  uint64_t  Key0;
+  uint64_t  Key1;
   SolPubkey Owner;
-  uint64_t Quantity;
-  uint64_t ClientId;
-} LeafNode;
-static_assert(sizeof(LeafNode) == 72, "incorrect size of LeafNode");
+  uint64_t  Quantity;
+  uint64_t  ClientId;
+} serum_node_leaf_t;
+static_assert(sizeof(serum_node_leaf_t) == 72, "incorrect size of serum_node_leaf_t");
 
-typedef struct FreeNode
-{
-  uint32_t Tag;
-  uint32_t Next;
-} FreeNode;
-static_assert(sizeof(FreeNode) == 8, "incorrect size of FreeNode");
-
-typedef struct AnyNode
+typedef struct serum_node_any
 {
   uint32_t Tag;
   uint32_t Data[17];
-} AnyNode;
-static_assert(sizeof(AnyNode) == 72, "incorrect size of AnyNode");
+} serum_node_any_t;
+static_assert(sizeof(serum_node_any_t) == 72, "incorrect size of serum_node_any_t");
+
+static bool verify_serum_padding(uint8_t** iter, uint64_t* left)
+{
+  if (*left < 5 || sol_memcmp(*iter, "serum", 5) != 0)
+    return false;
+  *iter = *iter + 5;
+  *left = *left - 5;
+
+  if (*left < 7 || sol_memcmp(*iter + *left - 7, "padding", 7) != 0)
+    return false;
+  *left = *left - 7;
+
+  return true;
+}
+
+#define BUF_CAST(n, t, i, l) \
+  if (l < sizeof(t)) { return ERROR_ACCOUNT_DATA_TOO_SMALL; } \
+  const t* n = (const t*) i; \
+  i += sizeof(t); \
+  l -= sizeof(t);
 
 extern uint64_t entrypoint(const uint8_t* input)
 {
-  sol_log("serum-pyth entrypoint");
-
-  // 0) Payer               [signer]
+  // This program takes a single instruction, which has no binary data, and
+  // expects the following accounts as parameters:
+  // 0) Payer               [signer,writeable]
   // 1) Serum ProgramID     []
   // 2) Serum Market        []
   // 3) Serum Bids          []
   // 4) Serum Asks          []
 
-  SolAccountInfo inputAccounts[5];
-  SolParameters inputParams;
-
-  inputParams.ka = inputAccounts;
-
-  if (!sol_deserialize(input, &inputParams, SOL_ARRAY_SIZE(inputAccounts))) {
-    sol_log("ERR1");
+  SolAccountInfo input_accounts[5];
+  SolParameters input_params;
+  input_params.ka = input_accounts;
+  if (!sol_deserialize(input, &input_params, SOL_ARRAY_SIZE(input_accounts)))
     return ERROR_INVALID_ARGUMENT;
-  }
-
-  if (inputParams.ka_num != SOL_ARRAY_SIZE(inputAccounts)) {
-    sol_log("ERR2");
+  if (input_params.ka_num != SOL_ARRAY_SIZE(input_accounts))
     return ERROR_NOT_ENOUGH_ACCOUNT_KEYS;
-  }
-
-  const SolAccountInfo* accPayer       = inputAccounts + 0;
-  const SolAccountInfo* accSerumPID    = inputAccounts + 1;
-  const SolAccountInfo* accSerumMarket = inputAccounts + 2;
-  const SolAccountInfo* accSerumBids   = inputAccounts + 3;
-  const SolAccountInfo* accSerumAsks   = inputAccounts + 4;
-
-  const MarketStateHeader* market = NULL;
-  uint64_t bestBid = 0;
-  uint64_t bestAsk = 0;
-
-  // Verify stuff about Payer
-  {
-    //TODO
-    sol_log("payer passed validation");
-  }
-
-  // Verify stuff about SerumPID
-  {
-    if (!accSerumPID->executable) {
-      sol_log("ERR3");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    sol_log("serumPID passed validation");
-  }
-
-  // Verify stuff about SerumMarket
-  {
-    if (!SolPubkey_same(accSerumMarket->owner, accSerumPID->key)) {
-      sol_log("ERR4");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    uint8_t* iter = accSerumMarket->data;
-    uint64_t left = accSerumMarket->data_len;
-
-    if (left < 5 || sol_memcmp(iter, "serum", 5) != 0) {
-      sol_log("ERR7");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    iter += 5;
-    left -= 5;
-
-    if (left < 7 || sol_memcmp(iter + left - 7, "padding", 7) != 0) {
-      sol_log("ERR8");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    left -= 7;
-
-    if (left < sizeof(SerumAccountFlags)) {
-      sol_log("ERR9");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    const SerumAccountFlags* flags = (const SerumAccountFlags*) iter;
-    iter += sizeof(SerumAccountFlags);
-    left -= sizeof(SerumAccountFlags);
-
-    if (!flags->Initialized || !flags->Market || flags->Disabled || flags->Reserved) {
-      sol_log("ERR10");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    if (left < sizeof(MarketStateHeader)) {
-      sol_log("ERR11");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    market = (const MarketStateHeader*) iter;
-    iter += sizeof(MarketStateHeader);
-    left -= sizeof(MarketStateHeader);
-
-    if (!SolPubkey_same(&market->OwnAddress, accSerumMarket->key)) {
-      sol_log("ERR12");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    if (!SolPubkey_same(&market->Bids, accSerumBids->key)) {
-      sol_log("ERR17");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    if (!SolPubkey_same(&market->Asks, accSerumAsks->key)) {
-      sol_log("ERR18");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    sol_log("serumMarket passed validation");
-  }
-
-  // Verify stuff about SerumBids
-  {
-    if (!SolPubkey_same(accSerumBids->owner, accSerumPID->key)) {
-      sol_log("ERR5");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    uint8_t* iter = accSerumBids->data;
-    uint64_t left = accSerumBids->data_len;
-
-    if (left < 5 || sol_memcmp(iter, "serum", 5) != 0) {
-      sol_log("ERR13");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    iter += 5;
-    left -= 5;
-
-    if (left < 7 || sol_memcmp(iter + left - 7, "padding", 7) != 0) {
-      sol_log("ERR14");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    left -= 7;
-
-    if (left < sizeof(SerumAccountFlags)) {
-      sol_log("ERR15");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    const SerumAccountFlags* flags = (const SerumAccountFlags*) iter;
-    iter += sizeof(SerumAccountFlags);
-    left -= sizeof(SerumAccountFlags);
-
-    if (!flags->Initialized || !flags->Bids || flags->Disabled || flags->Reserved) {
-      sol_log("ERR16");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    if (left < sizeof(BookHeader)) {
-      sol_log("ERR23");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    const BookHeader* hdr = (const BookHeader*) iter;
-    iter += sizeof(BookHeader);
-    left -= sizeof(BookHeader);
-
-    //TODO: Verify size of nodes and whatnot
-
-    // Find maximum (best) bid
-    const AnyNode* nodes = (const AnyNode*) iter;
-    if (hdr->LeafCount > 0) {
-      const AnyNode* node = &nodes[hdr->Root];
-      while (true) {
-        if (node->Tag == eLeafNode) {
-          const LeafNode* leaf = (const LeafNode*) node;
-          bestBid = leaf->Key1;
-          break;
-        }
-        else if (node->Tag == eInnerNode) {
-          const InnerNode* inner = (const InnerNode*) node;
-          node = &nodes[inner->ChildB];
-        }
-        else {
-          sol_log("ERR24");
-          return ERROR_INVALID_ARGUMENT;
-        }
-      }
-    }
-
-    sol_log("serumBids passed validation");
-  }
-
-  // Verify stuff about SerumAsks
-  {
-    if (!SolPubkey_same(accSerumAsks->owner, accSerumPID->key)) {
-      sol_log("ERR6");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    uint8_t* iter = accSerumAsks->data;
-    uint64_t left = accSerumAsks->data_len;
-
-    if (left < 5 || sol_memcmp(iter, "serum", 5) != 0) {
-      sol_log("ERR19");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    iter += 5;
-    left -= 5;
-
-    if (left < 7 || sol_memcmp(iter + left - 7, "padding", 7) != 0) {
-      sol_log("ERR20");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    left -= 7;
-
-    if (left < sizeof(SerumAccountFlags)) {
-      sol_log("ERR21");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    const SerumAccountFlags* flags = (const SerumAccountFlags*) iter;
-    iter += sizeof(SerumAccountFlags);
-    left -= sizeof(SerumAccountFlags);
-
-    if (!flags->Initialized || !flags->Asks || flags->Disabled || flags->Reserved) {
-      sol_log("ERR22");
-      return ERROR_INVALID_ARGUMENT;
-    }
-
-    if (left < sizeof(BookHeader)) {
-      sol_log("ERR26");
-      return ERROR_INVALID_ARGUMENT;
-    }
-    const BookHeader* hdr = (const BookHeader*) iter;
-    iter += sizeof(BookHeader);
-    left -= sizeof(BookHeader);
-
-    //TODO: Verify size of nodes and whatnot
-
-    // Find minimum (best) ask
-    const AnyNode* nodes = (const AnyNode*) iter;
-    if (hdr->LeafCount > 0) {
-      const AnyNode* node = &nodes[hdr->Root];
-      while (true) {
-        if (node->Tag == eLeafNode) {
-          const LeafNode* leaf = (const LeafNode*) node;
-          bestAsk = leaf->Key1;
-          break;
-        }
-        else if (node->Tag == eInnerNode) {
-          const InnerNode* inner = (const InnerNode*) node;
-          node = &nodes[inner->ChildA];
-        }
-        else {
-          sol_log("ERR25");
-          return ERROR_INVALID_ARGUMENT;
-        }
-      }
-    }
-
-    sol_log("serumAsks passed validation");
-  }
-
-  sol_log("**** BEST BID / BEST ASK ****");
-  sol_log_64(bestBid, bestAsk, 0, 0, 0);
 
   /*
   sol_log("**** this programId:");
-  sol_log_pubkey(inputParams.program_id);
+  sol_log_pubkey(input_params.program_id);
   sol_log("\n");
 
   sol_log("**** number of accounts, data len");
-  sol_log_64(inputParams.ka_num, inputParams.data_len, 0, 0, 0);
+  sol_log_64(input_params.ka_num, input_params.data_len, 0, 0, 0);
   sol_log("\n");
 
-  for (uint64_t i = 0; i < inputParams.ka_num; ++i) {
-    const SolAccountInfo* acc = &(inputAccounts[i]);
+  for (uint64_t i = 0; i < input_params.ka_num; ++i) {
+    const SolAccountInfo* acc = &(input_accounts[i]);
     sol_log("**** account index, data_len, is_sign, is_write, executable");
     sol_log_64(i, acc->data_len, acc->is_signer, acc->is_writable, acc->executable);
     sol_log("**** account pubkey");
@@ -369,6 +141,141 @@ extern uint64_t entrypoint(const uint8_t* input)
     sol_log("\n\n");
   }
   */
+
+  const SolAccountInfo* account_payer        = input_accounts + 0;
+  const SolAccountInfo* account_serum_prog   = input_accounts + 1;
+  const SolAccountInfo* account_serum_market = input_accounts + 2;
+  const SolAccountInfo* account_serum_bids   = input_accounts + 3;
+  const SolAccountInfo* account_serum_asks   = input_accounts + 4;
+
+  bool trading = true;
+  uint64_t best_bid_lots = 0;
+  uint64_t best_ask_lots = 0;
+
+  // Verify constraints on payer
+  {
+    //TODO
+    sol_log("payer passed validation");
+  }
+
+  // Verify constraints on Serum progam ID
+  {
+    if (!account_serum_prog->executable)
+      return ERROR_INVALID_ARGUMENT;
+    sol_log("serum program ID passed validation");
+  }
+
+  // Verify constraints on Serum market
+  {
+    if (!SolPubkey_same(account_serum_market->owner, account_serum_prog->key))
+      return ERROR_INCORRECT_PROGRAM_ID;
+
+    uint8_t* iter = account_serum_market->data;
+    uint64_t left = account_serum_market->data_len;
+    if (!verify_serum_padding(&iter, &left))
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    BUF_CAST(flags, serum_flags_t, iter, left);
+    if (!flags->Initialized || !flags->Market || flags->Disabled || flags->Reserved)
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    BUF_CAST(market, serum_market_t, iter, left);
+    if (!SolPubkey_same(&market->OwnAddress, account_serum_market->key) ||
+        !SolPubkey_same(&market->Bids, account_serum_bids->key) ||
+        !SolPubkey_same(&market->Asks, account_serum_asks->key))
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    sol_log("serum market passed validation");
+  }
+
+  // Verify constraints on Serum bids
+  {
+    if (!SolPubkey_same(account_serum_bids->owner, account_serum_prog->key))
+      return ERROR_INCORRECT_PROGRAM_ID;
+
+    uint8_t* iter = account_serum_bids->data;
+    uint64_t left = account_serum_bids->data_len;
+    if (!verify_serum_padding(&iter, &left))
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    BUF_CAST(flags, serum_flags_t, iter, left);
+    if (!flags->Initialized || !flags->Bids || flags->Disabled || flags->Reserved)
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    BUF_CAST(book, serum_book_t, iter, left);
+    serum_node_any_t* nodes = (serum_node_any_t*) iter;
+
+    uint64_t max_nodes = left / sizeof(serum_node_any_t);
+    if (book->LeafCount > max_nodes)
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    if (book->LeafCount == 0) {
+      trading = false;
+    } else {
+      uint32_t idx = book->Root;
+      while (true) {
+        if (idx > max_nodes)
+          return ERROR_INVALID_ACCOUNT_DATA;
+        serum_node_any_t* node = &nodes[idx];
+        if (node->Tag == SERUM_NODE_TYPE_LEAF) {
+          best_bid_lots = ((serum_node_leaf_t*) node)->Key1;
+          break;
+        } else if (node->Tag == SERUM_NODE_TYPE_INNER) {
+          idx = ((serum_node_inner_t*) node)->ChildB; // Larger prices to the right
+        } else {
+          return ERROR_INVALID_ACCOUNT_DATA;
+        }
+      }
+    }
+
+    sol_log("serum bids passed validation");
+  }
+
+  // Verify constraints on Serum asks
+  {
+    if (!SolPubkey_same(account_serum_asks->owner, account_serum_prog->key))
+      return ERROR_INCORRECT_PROGRAM_ID;
+
+    uint8_t* iter = account_serum_asks->data;
+    uint64_t left = account_serum_asks->data_len;
+    if (!verify_serum_padding(&iter, &left))
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    BUF_CAST(flags, serum_flags_t, iter, left);
+    if (!flags->Initialized || !flags->Asks || flags->Disabled || flags->Reserved)
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    BUF_CAST(book, serum_book_t, iter, left);
+    serum_node_any_t* nodes = (serum_node_any_t*) iter;
+
+    uint64_t max_nodes = left / sizeof(serum_node_any_t);
+    if (book->LeafCount > max_nodes)
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    if (book->LeafCount == 0) {
+      trading = false;
+    } else {
+      uint32_t idx = book->Root;
+      while (true) {
+        if (idx > max_nodes)
+          return ERROR_INVALID_ACCOUNT_DATA;
+        serum_node_any_t* node = &nodes[idx];
+        if (node->Tag == SERUM_NODE_TYPE_LEAF) {
+          best_ask_lots = ((serum_node_leaf_t*) node)->Key1;
+          break;
+        } else if (node->Tag == SERUM_NODE_TYPE_INNER) {
+          idx = ((serum_node_inner_t*) node)->ChildA; // Smaller prices to the left
+        } else {
+          return ERROR_INVALID_ACCOUNT_DATA;
+        }
+      }
+    }
+
+    sol_log("serum asks passed validation");
+  }
+
+  sol_log("**** BEST BID / BEST ASK / TRADING ****");
+  sol_log_64(best_bid_lots, best_ask_lots, trading, 0, 0);
 
   return SUCCESS;
 }

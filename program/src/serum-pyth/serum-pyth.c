@@ -149,15 +149,18 @@ extern uint64_t entrypoint(const uint8_t* input)
   // This program takes a single instruction, which has no binary data, and
   // expects the following accounts as parameters:
   // 0) Payer               [signer,writeable]
-  // 1) Serum ProgramID     []
-  // 2) Serum Market        []
-  // 3) Serum Bids          []
-  // 4) Serum Asks          []
-  // 5) SPL Quote Mint      []
-  // 6) SPL Base Mint       []
-  // 7) Sysvar Clock        []
+  // 1) Pyth Price          [writeable]
+  // 2) Serum ProgramID     []
+  // 3) Serum Market        []
+  // 4) Serum Bids          []
+  // 5) Serum Asks          []
+  // 6) SPL Quote Mint      []
+  // 7) SPL Base Mint       []
+  // 8) Sysvar Clock        []
+  // 9) Pyth ProgramID      []
+  // 10) Pyth Param         []
 
-  SolAccountInfo input_accounts[8];
+  SolAccountInfo input_accounts[11];
   SolParameters input_params;
   input_params.ka = input_accounts;
   if (!sol_deserialize(input, &input_params, SOL_ARRAY_SIZE(input_accounts)))
@@ -166,13 +169,16 @@ extern uint64_t entrypoint(const uint8_t* input)
     return ERROR_NOT_ENOUGH_ACCOUNT_KEYS;
 
   const SolAccountInfo* account_payer          = input_accounts + 0;
-  const SolAccountInfo* account_serum_prog     = input_accounts + 1;
-  const SolAccountInfo* account_serum_market   = input_accounts + 2;
-  const SolAccountInfo* account_serum_bids     = input_accounts + 3;
-  const SolAccountInfo* account_serum_asks     = input_accounts + 4;
-  const SolAccountInfo* account_spl_quote_mint = input_accounts + 5;
-  const SolAccountInfo* account_spl_base_mint  = input_accounts + 6;
-  const SolAccountInfo* account_sysvar_clock   = input_accounts + 7;
+  const SolAccountInfo* account_pyth_price     = input_accounts + 1;
+  const SolAccountInfo* account_serum_prog     = input_accounts + 2;
+  const SolAccountInfo* account_serum_market   = input_accounts + 3;
+  const SolAccountInfo* account_serum_bids     = input_accounts + 4;
+  const SolAccountInfo* account_serum_asks     = input_accounts + 5;
+  const SolAccountInfo* account_spl_quote_mint = input_accounts + 6;
+  const SolAccountInfo* account_spl_base_mint  = input_accounts + 7;
+  const SolAccountInfo* account_sysvar_clock   = input_accounts + 8;
+  const SolAccountInfo* account_pyth_prog      = input_accounts + 9;
+  const SolAccountInfo* account_pyth_param     = input_accounts + 10;
 
   bool trading = true;
   uint64_t base_lot_size = 0;
@@ -200,6 +206,11 @@ extern uint64_t entrypoint(const uint8_t* input)
     if (account_sysvar_clock->data_len != sizeof(sysvar_clock_t))
       return ERROR_ACCOUNT_DATA_TOO_SMALL;
     clock = (sysvar_clock_t*) account_sysvar_clock->data;
+  }
+
+  // Verify constraints on Pyth program ID
+  {
+    //TODO
   }
 
   // Verify constraints on Pyth price account
@@ -395,28 +406,28 @@ extern uint64_t entrypoint(const uint8_t* input)
     // key[2] param account         [readable]
     // key[3] sysvar_clock account  [readable]
 
-    SolAccountInfo pyth_accounts[5];
-    pyth_accounts[0] = *account_payer;
-    pyth_accounts[1] = *account_payer; //TODO
-    pyth_accounts[2] = *account_payer; //TODO
-    pyth_accounts[3] = *account_sysvar_clock;
-    pyth_accounts[4] = *account_payer; //TODO (programId)
+    SolAccountInfo pyth_accounts[5] = {
+      *account_payer,
+      *account_pyth_price,
+      *account_pyth_param,
+      *account_sysvar_clock,
+      *account_pyth_prog,
+    };
 
     SolAccountMeta meta[4] = {
       {account_payer->key, true, true},
-      {account_payer->key, true, false}, //TODO
+      {account_pyth_price->key, true, false},
+      {account_pyth_param->key, false, false},
       {account_sysvar_clock->key, false, false},
-      {account_payer->key, false, false}, //TODO
     };
 
-    //TODO: Clean all this up
     cmd_upd_price_t cmd;
     cmd.ver_ = PC_VERSION;
-    cmd.cmd_ = e_cmd_agg_price;
+    cmd.cmd_ = e_cmd_upd_price;
     cmd.status_ = (trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN);
     cmd.unused_ = 0;
     cmd.price_ = (pyth_bid + pyth_ask) / 2;
-    cmd.conf_ = (pyth_bid - pyth_ask);
+    cmd.conf_ = (pyth_bid < pyth_ask) ? (pyth_ask - pyth_bid) : 0;
     cmd.pub_slot_ = clock->slot_;
 
     SolInstruction inst;
@@ -426,8 +437,7 @@ extern uint64_t entrypoint(const uint8_t* input)
     inst.data = (uint8_t*) &cmd;
     inst.data_len = sizeof(cmd);
 
-    //return sol_invoke(&inst, pyth_accounts, SOL_ARRAY_SIZE(pyth_accounts));
-    return SUCCESS;
+    return sol_invoke(&inst, pyth_accounts, SOL_ARRAY_SIZE(pyth_accounts));
   }
 
   return ERROR_INVALID_ARGUMENT; // Should not reach here

@@ -40,6 +40,9 @@ public:
   void set_spl_quote_mint( pc::pub_key *pk ) { spl_quote_mint_ = pk; }
   void set_spl_base_mint( pc::pub_key *pk ) { spl_base_mint_ = pk; }
   void set_sysvar_clock( pc::pub_key *pk ) { sysvar_clock_ = pk; }
+  void set_pyth_prog( pc::pub_key *pk ) { pyth_prog_ = pk; }
+  void set_pyth_price( pc::pub_key *pk ) { pyth_price_ = pk; }
+  void set_pyth_param( pc::pub_key *pk ) { pyth_param_ = pk; }
   void build( pc::net_wtr& ) override;
 
 private:
@@ -54,6 +57,9 @@ private:
   pc::pub_key      *spl_quote_mint_ = nullptr;
   pc::pub_key      *spl_base_mint_ = nullptr;
   pc::pub_key      *sysvar_clock_ = nullptr;
+  pc::pub_key      *pyth_prog_ = nullptr;
+  pc::pub_key      *pyth_price_ = nullptr;
+  pc::pub_key      *pyth_param_ = nullptr;
 };
 
 void serum_pyth::build( pc::net_wtr& wtr )
@@ -70,11 +76,12 @@ void serum_pyth::build( pc::net_wtr& wtr )
   size_t tx_idx = tx.get_pos();
   tx.add( (uint8_t)1 ); // pub is only signing account
   tx.add( (uint8_t)0 ); // read-only signed accounts
-  tx.add( (uint8_t)8 );
+  tx.add( (uint8_t)10 ); // read-only unsigned accounts
 
   // accounts
-  tx.add_len<9>();
+  tx.add_len<12>();
   tx.add( *pkey_ );
+  tx.add( *pyth_price_ );
   tx.add( *serum_prog_ );
   tx.add( *serum_market_ );
   tx.add( *serum_bids_ );
@@ -82,6 +89,8 @@ void serum_pyth::build( pc::net_wtr& wtr )
   tx.add( *spl_quote_mint_ );
   tx.add( *spl_base_mint_ );
   tx.add( *sysvar_clock_ );
+  tx.add( *pyth_prog_ );
+  tx.add( *pyth_param_ );
   tx.add( *gkey_ );
 
   // recent block hash
@@ -89,8 +98,8 @@ void serum_pyth::build( pc::net_wtr& wtr )
 
   // instructions section
   tx.add_len<1>();      // one instruction
-  tx.add( (uint8_t)8);  // program_id index
-  tx.add_len<8>();
+  tx.add( (uint8_t)11);  // program_id index
+  tx.add_len<11>();
   tx.add( (uint8_t)0 );
   tx.add( (uint8_t)1 );
   tx.add( (uint8_t)2 );
@@ -99,6 +108,9 @@ void serum_pyth::build( pc::net_wtr& wtr )
   tx.add( (uint8_t)5 );
   tx.add( (uint8_t)6 );
   tx.add( (uint8_t)7 );
+  tx.add( (uint8_t)8 );
+  tx.add( (uint8_t)9 );
+  tx.add( (uint8_t)10 );
 
   // instruction parameter section
   tx.add_len<0>();
@@ -136,13 +148,19 @@ int main(int /*argc*/, char** /*argv*/)
   pc::pub_key asks;
   asks.init_from_text(std::string("F1tDtTDNzusig3kJwhKwGWspSu8z2nRwNXFWc6wJowjM"));
   pc::pub_key thisPID;
-  thisPID.init_from_text(std::string("2PieNp8PgULJFeejR6EtQF4mnTjkFWycetwZhJht2qR3"));
+  thisPID.init_from_text(std::string("CLs66NQrh6MWYzkgxrC79tfepMt5neTTCgguzpYo1LCW"));
   pc::pub_key quoteMint;
   quoteMint.init_from_text(std::string("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"));
   pc::pub_key baseMint;
   baseMint.init_from_text(std::string("9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"));
   pc::pub_key sysvarClock;
   sysvarClock.init_from_text(std::string("SysvarC1ock11111111111111111111111111111111"));
+  pc::pub_key pythPID;
+  pythPID.init_from_text(std::string("3mPtGfRCBMQxvgGk7xG9RvYUH32ugb44AtMnjuPWWReo"));
+  pc::pub_key pythPrice;
+  pythPrice.init_from_text(std::string("7aeFDevae3EJ9efijjEb2oCUQxLD8GnnvzPngKVwx11u"));
+  pc::pub_key pythParam;
+  pythParam.init_from_text(std::string("CEvE1AmZDepzpzgxcMt63X3YRbHi9XgCVM1BbvotpXyN"));
 
   int64_t last = pc::get_now();
 
@@ -153,7 +171,7 @@ int main(int /*argc*/, char** /*argv*/)
 
     mgr.poll(false);
 
-    if (now - last > int64_t(3e9)) {
+    if (now - last > int64_t(5e8)) {
       if (mgr.get_recent_block_hash() == nullptr)
         continue;
 
@@ -171,6 +189,9 @@ int main(int /*argc*/, char** /*argv*/)
       req->set_spl_quote_mint(&quoteMint);
       req->set_spl_base_mint(&baseMint);
       req->set_sysvar_clock(&sysvarClock);
+      req->set_pyth_prog(&pythPID);
+      req->set_pyth_price(&pythPrice);
+      req->set_pyth_param(&pythParam);
       mgr.submit(req);
     }
   }

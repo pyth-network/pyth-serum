@@ -1,9 +1,51 @@
 #include <solana_sdk.h>
 
-#define SERUM_NODE_TYPE_INNER 1
-#define SERUM_NODE_TYPE_LEAF  2
+#include "../../../../pyth-client/program/src/oracle/oracle.h" //TODO
 
-typedef struct serum_flags
+#define PACKED __attribute__((__packed__))
+
+static const uint64_t TEN_TO_THE[20] = {
+  1UL,
+  10UL,
+  100UL,
+  1000UL,
+  10000UL,
+  100000UL,
+  1000000UL,
+  10000000UL,
+  100000000UL,
+  1000000000UL,
+  10000000000UL,
+  100000000000UL,
+  1000000000000UL,
+  10000000000000UL,
+  100000000000000UL,
+  1000000000000000UL,
+  10000000000000000UL,
+  100000000000000000UL,
+  1000000000000000000UL,
+  10000000000000000000UL
+};
+
+#define BUF_CAST(n, t, i, l) \
+  if (l < sizeof(t)) { return ERROR_ACCOUNT_DATA_TOO_SMALL; } \
+  const t* n = (const t*) i; \
+  i += sizeof(t); \
+  l -= sizeof(t);
+
+typedef struct PACKED spl_mint
+{
+  uint32_t  MintAuthorityOp;
+  SolPubkey MintAuthority;
+  uint64_t  TotalSupply;
+  uint8_t   Decimals;
+  uint8_t   Init;
+  uint32_t  FreezeAuthorityOp;
+  SolPubkey FreezeAuthority;
+} spl_mint_t;
+static_assert(sizeof(spl_mint_t) == 82, "incorrect size of spl_mint_t");
+
+typedef struct PACKED serum_flags
 {
   uint64_t Initialized  : 1;
   uint64_t Market       : 1;
@@ -17,7 +59,7 @@ typedef struct serum_flags
 } serum_flags_t;
 static_assert(sizeof(serum_flags_t) == 8, "incorrect size of serum_flags_t");
 
-typedef struct serum_market
+typedef struct PACKED serum_market
 {
   SolPubkey OwnAddress;
   uint64_t  VaultSignerNonce;
@@ -41,7 +83,7 @@ typedef struct serum_market
 } serum_market_t;
 static_assert(sizeof(serum_market_t) == 368, "incorrect size of serum_market_t");
 
-typedef struct serum_book
+typedef struct PACKED serum_book
 {
   uint64_t BumpIndex;
   uint64_t FreeListLen;
@@ -51,7 +93,17 @@ typedef struct serum_book
 } serum_book_t;
 static_assert(sizeof(serum_book_t) == 32, "incorrect size of serum_book_t");
 
-typedef struct serum_node_inner
+#define SERUM_NODE_TYPE_INNER 1
+#define SERUM_NODE_TYPE_LEAF  2
+
+typedef struct PACKED serum_node_any
+{
+  uint32_t Tag;
+  uint32_t Data[17];
+} serum_node_any_t;
+static_assert(sizeof(serum_node_any_t) == 72, "incorrect size of serum_node_any_t");
+
+typedef struct PACKED serum_node_inner
 {
   uint32_t Tag;
   uint32_t PrefixLen;
@@ -62,7 +114,7 @@ typedef struct serum_node_inner
 } serum_node_inner_t;
 static_assert(sizeof(serum_node_inner_t) == 32, "incorrect size of serum_node_inner_t");
 
-typedef struct serum_node_leaf
+typedef struct PACKED serum_node_leaf
 {
   uint32_t  Tag;
   uint8_t   OwnerSlot;
@@ -75,13 +127,6 @@ typedef struct serum_node_leaf
   uint64_t  ClientId;
 } serum_node_leaf_t;
 static_assert(sizeof(serum_node_leaf_t) == 72, "incorrect size of serum_node_leaf_t");
-
-typedef struct serum_node_any
-{
-  uint32_t Tag;
-  uint32_t Data[17];
-} serum_node_any_t;
-static_assert(sizeof(serum_node_any_t) == 72, "incorrect size of serum_node_any_t");
 
 static bool verify_serum_padding(uint8_t** iter, uint64_t* left)
 {
@@ -97,12 +142,6 @@ static bool verify_serum_padding(uint8_t** iter, uint64_t* left)
   return true;
 }
 
-#define BUF_CAST(n, t, i, l) \
-  if (l < sizeof(t)) { return ERROR_ACCOUNT_DATA_TOO_SMALL; } \
-  const t* n = (const t*) i; \
-  i += sizeof(t); \
-  l -= sizeof(t);
-
 extern uint64_t entrypoint(const uint8_t* input)
 {
   // This program takes a single instruction, which has no binary data, and
@@ -112,8 +151,10 @@ extern uint64_t entrypoint(const uint8_t* input)
   // 2) Serum Market        []
   // 3) Serum Bids          []
   // 4) Serum Asks          []
+  // 5) SPL Quote Mint      []
+  // 6) SPL Base Mint       []
 
-  SolAccountInfo input_accounts[5];
+  SolAccountInfo input_accounts[7];
   SolParameters input_params;
   input_params.ka = input_accounts;
   if (!sol_deserialize(input, &input_params, SOL_ARRAY_SIZE(input_accounts)))
@@ -121,41 +162,47 @@ extern uint64_t entrypoint(const uint8_t* input)
   if (input_params.ka_num != SOL_ARRAY_SIZE(input_accounts))
     return ERROR_NOT_ENOUGH_ACCOUNT_KEYS;
 
-  /*
-  sol_log("**** this programId:");
-  sol_log_pubkey(input_params.program_id);
-  sol_log("\n");
-
-  sol_log("**** number of accounts, data len");
-  sol_log_64(input_params.ka_num, input_params.data_len, 0, 0, 0);
-  sol_log("\n");
-
-  for (uint64_t i = 0; i < input_params.ka_num; ++i) {
-    const SolAccountInfo* acc = &(input_accounts[i]);
-    sol_log("**** account index, data_len, is_sign, is_write, executable");
-    sol_log_64(i, acc->data_len, acc->is_signer, acc->is_writable, acc->executable);
-    sol_log("**** account pubkey");
-    sol_log_pubkey(acc->key);
-    sol_log("**** account program owner");
-    sol_log_pubkey(acc->owner);
-    sol_log("\n\n");
-  }
-  */
-
-  const SolAccountInfo* account_payer        = input_accounts + 0;
-  const SolAccountInfo* account_serum_prog   = input_accounts + 1;
-  const SolAccountInfo* account_serum_market = input_accounts + 2;
-  const SolAccountInfo* account_serum_bids   = input_accounts + 3;
-  const SolAccountInfo* account_serum_asks   = input_accounts + 4;
+  const SolAccountInfo* account_payer          = input_accounts + 0;
+  const SolAccountInfo* account_serum_prog     = input_accounts + 1;
+  const SolAccountInfo* account_serum_market   = input_accounts + 2;
+  const SolAccountInfo* account_serum_bids     = input_accounts + 3;
+  const SolAccountInfo* account_serum_asks     = input_accounts + 4;
+  const SolAccountInfo* account_spl_quote_mint = input_accounts + 5;
+  const SolAccountInfo* account_spl_base_mint  = input_accounts + 6;
 
   bool trading = true;
+  uint64_t base_lot_size = 0;
+  uint64_t quote_lot_size = 0;
   uint64_t best_bid_lots = 0;
   uint64_t best_ask_lots = 0;
+  uint8_t quote_exponent = 0;
+  uint8_t base_exponent = 0;
+  uint64_t pyth_bid = 0;
+  uint64_t pyth_ask = 0;
 
   // Verify constraints on payer
   {
     //TODO
     sol_log("payer passed validation");
+  }
+
+  // Verify constraints on Pyth price account
+  {
+    //TODO
+  }
+
+  // Verify constraints on SPL quote mint
+  {
+    if (account_spl_quote_mint->data_len != sizeof(spl_mint_t))
+      return ERROR_ACCOUNT_DATA_TOO_SMALL;
+    quote_exponent = ((spl_mint_t*) account_spl_quote_mint->data)->Decimals;
+  }
+
+  // Verify constraints on SPL base mint
+  {
+    if (account_spl_base_mint->data_len != sizeof(spl_mint_t))
+      return ERROR_ACCOUNT_DATA_TOO_SMALL;
+    base_exponent = ((spl_mint_t*) account_spl_base_mint->data)->Decimals;
   }
 
   // Verify constraints on Serum progam ID
@@ -181,9 +228,14 @@ extern uint64_t entrypoint(const uint8_t* input)
 
     BUF_CAST(market, serum_market_t, iter, left);
     if (!SolPubkey_same(&market->OwnAddress, account_serum_market->key) ||
+        !SolPubkey_same(&market->QuoteMint, account_spl_quote_mint->key) ||
+        !SolPubkey_same(&market->BaseMint, account_spl_base_mint->key) ||
         !SolPubkey_same(&market->Bids, account_serum_bids->key) ||
         !SolPubkey_same(&market->Asks, account_serum_asks->key))
       return ERROR_INVALID_ACCOUNT_DATA;
+
+    base_lot_size = market->BaseLotSize;
+    quote_lot_size = market->QuoteLotSize;
 
     sol_log("serum market passed validation");
   }
@@ -274,8 +326,93 @@ extern uint64_t entrypoint(const uint8_t* input)
     sol_log("serum asks passed validation");
   }
 
-  sol_log("**** BEST BID / BEST ASK / TRADING ****");
-  sol_log_64(best_bid_lots, best_ask_lots, trading, 0, 0);
+  // Convert serum prices into pyth-format prices
+  if (trading)
+  {
+    // Price has units of [QuoteLot/BaseLot]. We need to convert this to the units
+    // that Pyth expects for this price account (based on the price exponent).
+    //
+    // 1 [QuoteLot] = QuoteLotSize [QuoteNative]
+    // 1 [BaseLot]  = BaseLotSize  [BaseNative]
+    //
+    // 1 [QuoteNative] = 10^(PythExponent - QuoteNativeExponent) [Pyth]
+    // 1 [BaseNative]  = 10^(PythExponent - BaseNativeExponent)  [Pyth]
 
-  return SUCCESS;
+    sol_log("**** BEST BID / BEST ASK / TRADING / BASE LOT SIZE / QUOTE LOT SIZE****");
+    sol_log_64(best_bid_lots, best_ask_lots, trading, base_lot_size, quote_lot_size);
+
+    //TODO: Make all these numbers come from real places
+    uint8_t pyth_exponent = 9;
+
+    if (quote_exponent > pyth_exponent || base_exponent > pyth_exponent)
+      return ERROR_INVALID_ARGUMENT; //TODO: Support this
+
+    if (pyth_exponent >= SOL_ARRAY_SIZE(TEN_TO_THE) ||
+        /*abs*/(pyth_exponent - quote_exponent) >= SOL_ARRAY_SIZE(TEN_TO_THE) ||
+        /*abs*/(pyth_exponent - base_exponent) >= SOL_ARRAY_SIZE(TEN_TO_THE))
+      return ERROR_INVALID_ACCOUNT_DATA;
+
+    //TODO: Do checked math here
+    uint64_t pyth_scalar = TEN_TO_THE[pyth_exponent];
+    uint64_t quote_lots_to_pyth = quote_lot_size * TEN_TO_THE[pyth_exponent - quote_exponent];
+    uint64_t base_lots_to_pyth = base_lot_size * TEN_TO_THE[pyth_exponent - base_exponent];
+    //uint64_t price_to_pyth =
+    //  ((__uint128_t) quote_lots_to_pyth) *
+    //  ((__uint128_t) pyth_scalar) /
+    //  ((__uint128_t) base_lots_to_pyth);
+    uint64_t price_to_pyth =
+      ((uint64_t) quote_lots_to_pyth) *
+      ((uint64_t) pyth_scalar) /
+      ((uint64_t) base_lots_to_pyth);
+
+    pyth_bid = best_bid_lots * price_to_pyth;
+    pyth_ask = best_ask_lots * price_to_pyth;
+
+    sol_log("**** BEST BID PYTH / BEST ASK PYTH****");
+    sol_log_64(pyth_bid, pyth_ask, price_to_pyth, quote_lots_to_pyth, base_lots_to_pyth);
+  }
+
+  // Publish update to Pyth via cross-program invokation
+  {
+    // key[0] funding account       [signer writable]
+    // key[1] price account         [writable]
+    // key[2] param account         [readable]
+    // key[3] sysvar_clock account  [readable]
+
+    SolAccountInfo pyth_accounts[5];
+    pyth_accounts[0] = *account_payer;
+    pyth_accounts[1] = *account_payer; //TODO
+    pyth_accounts[2] = *account_payer; //TODO
+    pyth_accounts[3] = *account_payer; //TODO
+    pyth_accounts[4] = *account_payer; //TODO (programId)
+
+    SolAccountMeta meta[4] = {
+      {account_payer->key, true, true},
+      {account_payer->key, true, false}, //TODO
+      {account_payer->key, false, false}, //TODO
+      {account_payer->key, false, false}, //TODO
+    };
+
+    //TODO: Clean all this up
+    cmd_upd_price_t cmd;
+    cmd.ver_ = PC_VERSION;
+    cmd.cmd_ = e_cmd_agg_price;
+    cmd.status_ = (trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN);
+    cmd.unused_ = 0;
+    cmd.price_ = (pyth_bid + pyth_ask) / 2;
+    cmd.conf_ = (pyth_bid - pyth_ask);
+    cmd.pub_slot_ = 0;
+
+    SolInstruction inst;
+    inst.program_id = pyth_accounts[4].key;
+    inst.accounts = meta;
+    inst.account_len = SOL_ARRAY_SIZE(meta);
+    inst.data = (uint8_t*) &cmd;
+    inst.data_len = sizeof(cmd);
+
+    //return sol_invoke(&inst, pyth_accounts, SOL_ARRAY_SIZE(pyth_accounts));
+    return SUCCESS;
+  }
+
+  return ERROR_INVALID_ARGUMENT; // Should not reach here
 }

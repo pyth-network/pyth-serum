@@ -37,6 +37,8 @@ public:
   void set_serum_market( pc::pub_key *pk ) { serum_market_ = pk; }
   void set_serum_bids( pc::pub_key *pk ) { serum_bids_ = pk; }
   void set_serum_asks( pc::pub_key *pk ) { serum_asks_ = pk; }
+  void set_spl_quote_mint( pc::pub_key *pk) { spl_quote_mint_ = pk; }
+  void set_spl_base_mint( pc::pub_key *pk) { spl_base_mint_ = pk; }
   void build( pc::net_wtr& ) override;
 
 private:
@@ -48,6 +50,8 @@ private:
   pc::pub_key      *serum_market_ = nullptr;
   pc::pub_key      *serum_bids_ = nullptr;
   pc::pub_key      *serum_asks_ = nullptr;
+  pc::pub_key      *spl_quote_mint_ = nullptr;
+  pc::pub_key      *spl_base_mint_ = nullptr;
 };
 
 void serum_pyth::build( pc::net_wtr& wtr )
@@ -64,15 +68,17 @@ void serum_pyth::build( pc::net_wtr& wtr )
   size_t tx_idx = tx.get_pos();
   tx.add( (uint8_t)1 ); // pub is only signing account
   tx.add( (uint8_t)0 ); // read-only signed accounts
-  tx.add( (uint8_t)5 );
+  tx.add( (uint8_t)7 );
 
   // accounts
-  tx.add_len<6>();
+  tx.add_len<8>();
   tx.add( *pkey_ );
   tx.add( *serum_prog_ );
   tx.add( *serum_market_ );
   tx.add( *serum_bids_ );
   tx.add( *serum_asks_ );
+  tx.add( *spl_quote_mint_ );
+  tx.add( *spl_base_mint_ );
   tx.add( *gkey_ );
 
   // recent block hash
@@ -80,13 +86,15 @@ void serum_pyth::build( pc::net_wtr& wtr )
 
   // instructions section
   tx.add_len<1>();      // one instruction
-  tx.add( (uint8_t)5);  // program_id index
-  tx.add_len<5>();
+  tx.add( (uint8_t)7);  // program_id index
+  tx.add_len<7>();
   tx.add( (uint8_t)0 );
   tx.add( (uint8_t)1 );
   tx.add( (uint8_t)2 );
   tx.add( (uint8_t)3 );
   tx.add( (uint8_t)4 );
+  tx.add( (uint8_t)5 );
+  tx.add( (uint8_t)6 );
 
   // instruction parameter section
   tx.add_len<0>();
@@ -125,6 +133,10 @@ int main(int /*argc*/, char** /*argv*/)
   asks.init_from_text(std::string("F1tDtTDNzusig3kJwhKwGWspSu8z2nRwNXFWc6wJowjM"));
   pc::pub_key thisPID;
   thisPID.init_from_text(std::string("2PieNp8PgULJFeejR6EtQF4mnTjkFWycetwZhJht2qR3"));
+  pc::pub_key quoteMint;
+  quoteMint.init_from_text(std::string("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"));
+  pc::pub_key baseMint;
+  baseMint.init_from_text(std::string("9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"));
 
   int64_t last = pc::get_now();
 
@@ -150,6 +162,8 @@ int main(int /*argc*/, char** /*argv*/)
       req->set_serum_market(&market);
       req->set_serum_bids(&bids);
       req->set_serum_asks(&asks);
+      req->set_spl_quote_mint(&quoteMint);
+      req->set_spl_base_mint(&baseMint);
       mgr.submit(req);
     }
   }

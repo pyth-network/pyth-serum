@@ -18,4 +18,4 @@ TARGET_INCLUDE_DIRECTORIES(serum-pyth PRIVATE /home/mass/work/pyth-client/)
 TARGET_INCLUDE_DIRECTORIES(serum-pyth PRIVATE /home/mass/work/pyth-client/program/src/)
 
 TARGET_LINK_LIBRARIES(serum-pyth PRIVATE /home/mass/work/pyth-client/build/libpc.a)
-TARGET_LINK_LIBRARIES(serum-pyth PRIVATE OpenSSL::SSL OpenSSL::Crypto pthread z)
+TARGET_LINK_LIBRARIES(serum-pyth PRIVATE OpenSSL::SSL OpenSSL::Crypto pthread z zstd)

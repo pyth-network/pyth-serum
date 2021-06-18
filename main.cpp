@@ -37,8 +37,9 @@ public:
   void set_serum_market( pc::pub_key *pk ) { serum_market_ = pk; }
   void set_serum_bids( pc::pub_key *pk ) { serum_bids_ = pk; }
   void set_serum_asks( pc::pub_key *pk ) { serum_asks_ = pk; }
-  void set_spl_quote_mint( pc::pub_key *pk) { spl_quote_mint_ = pk; }
-  void set_spl_base_mint( pc::pub_key *pk) { spl_base_mint_ = pk; }
+  void set_spl_quote_mint( pc::pub_key *pk ) { spl_quote_mint_ = pk; }
+  void set_spl_base_mint( pc::pub_key *pk ) { spl_base_mint_ = pk; }
+  void set_sysvar_clock( pc::pub_key *pk ) { sysvar_clock_ = pk; }
   void build( pc::net_wtr& ) override;
 
 private:
@@ -52,6 +53,7 @@ private:
   pc::pub_key      *serum_asks_ = nullptr;
   pc::pub_key      *spl_quote_mint_ = nullptr;
   pc::pub_key      *spl_base_mint_ = nullptr;
+  pc::pub_key      *sysvar_clock_ = nullptr;
 };
 
 void serum_pyth::build( pc::net_wtr& wtr )
@@ -68,10 +70,10 @@ void serum_pyth::build( pc::net_wtr& wtr )
   size_t tx_idx = tx.get_pos();
   tx.add( (uint8_t)1 ); // pub is only signing account
   tx.add( (uint8_t)0 ); // read-only signed accounts
-  tx.add( (uint8_t)7 );
+  tx.add( (uint8_t)8 );
 
   // accounts
-  tx.add_len<8>();
+  tx.add_len<9>();
   tx.add( *pkey_ );
   tx.add( *serum_prog_ );
   tx.add( *serum_market_ );
@@ -79,6 +81,7 @@ void serum_pyth::build( pc::net_wtr& wtr )
   tx.add( *serum_asks_ );
   tx.add( *spl_quote_mint_ );
   tx.add( *spl_base_mint_ );
+  tx.add( *sysvar_clock_ );
   tx.add( *gkey_ );
 
   // recent block hash
@@ -86,8 +89,8 @@ void serum_pyth::build( pc::net_wtr& wtr )
 
   // instructions section
   tx.add_len<1>();      // one instruction
-  tx.add( (uint8_t)7);  // program_id index
-  tx.add_len<7>();
+  tx.add( (uint8_t)8);  // program_id index
+  tx.add_len<8>();
   tx.add( (uint8_t)0 );
   tx.add( (uint8_t)1 );
   tx.add( (uint8_t)2 );
@@ -95,6 +98,7 @@ void serum_pyth::build( pc::net_wtr& wtr )
   tx.add( (uint8_t)4 );
   tx.add( (uint8_t)5 );
   tx.add( (uint8_t)6 );
+  tx.add( (uint8_t)7 );
 
   // instruction parameter section
   tx.add_len<0>();
@@ -137,6 +141,8 @@ int main(int /*argc*/, char** /*argv*/)
   quoteMint.init_from_text(std::string("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"));
   pc::pub_key baseMint;
   baseMint.init_from_text(std::string("9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"));
+  pc::pub_key sysvarClock;
+  sysvarClock.init_from_text(std::string("SysvarC1ock11111111111111111111111111111111"));
 
   int64_t last = pc::get_now();
 
@@ -164,6 +170,7 @@ int main(int /*argc*/, char** /*argv*/)
       req->set_serum_asks(&asks);
       req->set_spl_quote_mint(&quoteMint);
       req->set_spl_base_mint(&baseMint);
+      req->set_sysvar_clock(&sysvarClock);
       mgr.submit(req);
     }
   }

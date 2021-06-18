@@ -4,6 +4,8 @@
 
 #define PACKED __attribute__((__packed__))
 
+//extern uint64_t sol_get_clock_sysvar(sysvar_clock_t* clock);
+
 static const uint64_t TEN_TO_THE[20] = {
   1UL,
   10UL,
@@ -153,8 +155,9 @@ extern uint64_t entrypoint(const uint8_t* input)
   // 4) Serum Asks          []
   // 5) SPL Quote Mint      []
   // 6) SPL Base Mint       []
+  // 7) Sysvar Clock        []
 
-  SolAccountInfo input_accounts[7];
+  SolAccountInfo input_accounts[8];
   SolParameters input_params;
   input_params.ka = input_accounts;
   if (!sol_deserialize(input, &input_params, SOL_ARRAY_SIZE(input_accounts)))
@@ -169,6 +172,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   const SolAccountInfo* account_serum_asks     = input_accounts + 4;
   const SolAccountInfo* account_spl_quote_mint = input_accounts + 5;
   const SolAccountInfo* account_spl_base_mint  = input_accounts + 6;
+  const SolAccountInfo* account_sysvar_clock   = input_accounts + 7;
 
   bool trading = true;
   uint64_t base_lot_size = 0;
@@ -179,11 +183,23 @@ extern uint64_t entrypoint(const uint8_t* input)
   uint8_t base_exponent = 0;
   uint64_t pyth_bid = 0;
   uint64_t pyth_ask = 0;
+  sysvar_clock_t* clock; //sol_get_clock_sysvar(&clock);
 
   // Verify constraints on payer
   {
     //TODO
     sol_log("payer passed validation");
+  }
+
+  // Verify constraints on Clock sysvar
+  {
+    SolPubkey pk;
+    sol_memcpy(pk.x, sysvar_clock, sizeof(pk.x));
+    if (!SolPubkey_same(account_sysvar_clock->key, &pk))
+      return ERROR_INVALID_ARGUMENT;
+    if (account_sysvar_clock->data_len != sizeof(sysvar_clock_t))
+      return ERROR_ACCOUNT_DATA_TOO_SMALL;
+    clock = (sysvar_clock_t*) account_sysvar_clock->data;
   }
 
   // Verify constraints on Pyth price account
@@ -383,13 +399,13 @@ extern uint64_t entrypoint(const uint8_t* input)
     pyth_accounts[0] = *account_payer;
     pyth_accounts[1] = *account_payer; //TODO
     pyth_accounts[2] = *account_payer; //TODO
-    pyth_accounts[3] = *account_payer; //TODO
+    pyth_accounts[3] = *account_sysvar_clock;
     pyth_accounts[4] = *account_payer; //TODO (programId)
 
     SolAccountMeta meta[4] = {
       {account_payer->key, true, true},
       {account_payer->key, true, false}, //TODO
-      {account_payer->key, false, false}, //TODO
+      {account_sysvar_clock->key, false, false},
       {account_payer->key, false, false}, //TODO
     };
 
@@ -401,7 +417,7 @@ extern uint64_t entrypoint(const uint8_t* input)
     cmd.unused_ = 0;
     cmd.price_ = (pyth_bid + pyth_ask) / 2;
     cmd.conf_ = (pyth_bid - pyth_ask);
-    cmd.pub_slot_ = 0;
+    cmd.pub_slot_ = clock->slot_;
 
     SolInstruction inst;
     inst.program_id = pyth_accounts[4].key;

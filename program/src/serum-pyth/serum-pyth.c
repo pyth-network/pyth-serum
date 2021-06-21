@@ -270,7 +270,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   cmd.status_ = (trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN);
   cmd.unused_ = 0;
   cmd.price_ = (pyth_bid + pyth_ask) / 2;
-  cmd.conf_ = (pyth_bid < pyth_ask) ? ((pyth_ask - pyth_bid) / 2) : 0;
+  cmd.conf_ = (pyth_bid < pyth_ask) ? ((pyth_ask - pyth_bid) / 2) : ((pyth_bid - pyth_ask) / 2);
   cmd.pub_slot_ = clock->slot_;
 
   SolInstruction inst;

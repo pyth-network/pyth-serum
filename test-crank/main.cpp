@@ -132,7 +132,7 @@ int main(int /*argc*/, char** /*argv*/)
   pc::manager mgr;
   mgr.set_rpc_host("api.mainnet-beta.solana.com");
   mgr.set_tx_host("localhost");
-  mgr.set_dir("/home/mass/.pythd");
+  mgr.set_dir("");
   mgr.set_do_capture(false);
   if (!mgr.init()) {
     std::cerr << "test_publish: " << mgr.get_err_msg() << std::endl;

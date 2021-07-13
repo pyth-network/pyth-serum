@@ -42,7 +42,6 @@ public:
   void set_sysvar_clock( pc::pub_key *pk ) { sysvar_clock_ = pk; }
   void set_pyth_prog( pc::pub_key *pk ) { pyth_prog_ = pk; }
   void set_pyth_price( pc::pub_key *pk ) { pyth_price_ = pk; }
-  void set_pyth_param( pc::pub_key *pk ) { pyth_param_ = pk; }
   void build( pc::net_wtr& ) override;
 
 private:
@@ -59,7 +58,6 @@ private:
   pc::pub_key      *sysvar_clock_ = nullptr;
   pc::pub_key      *pyth_prog_ = nullptr;
   pc::pub_key      *pyth_price_ = nullptr;
-  pc::pub_key      *pyth_param_ = nullptr;
 };
 
 void serum_pyth::build( pc::net_wtr& wtr )
@@ -76,10 +74,10 @@ void serum_pyth::build( pc::net_wtr& wtr )
   size_t tx_idx = tx.get_pos();
   tx.add( (uint8_t)1 ); // pub is only signing account
   tx.add( (uint8_t)0 ); // read-only signed accounts
-  tx.add( (uint8_t)10 ); // read-only unsigned accounts
+  tx.add( (uint8_t)9 ); // read-only unsigned accounts
 
   // accounts
-  tx.add_len<12>();
+  tx.add_len<11>();
   tx.add( *pkey_ );
   tx.add( *pyth_price_ );
   tx.add( *serum_prog_ );
@@ -90,7 +88,6 @@ void serum_pyth::build( pc::net_wtr& wtr )
   tx.add( *spl_base_mint_ );
   tx.add( *sysvar_clock_ );
   tx.add( *pyth_prog_ );
-  tx.add( *pyth_param_ );
   tx.add( *gkey_ );
 
   // recent block hash
@@ -98,8 +95,8 @@ void serum_pyth::build( pc::net_wtr& wtr )
 
   // instructions section
   tx.add_len<1>();      // one instruction
-  tx.add( (uint8_t)11);  // program_id index
-  tx.add_len<11>();
+  tx.add( (uint8_t)10);  // program_id index
+  tx.add_len<10>();
   tx.add( (uint8_t)0 );
   tx.add( (uint8_t)1 );
   tx.add( (uint8_t)2 );
@@ -110,7 +107,6 @@ void serum_pyth::build( pc::net_wtr& wtr )
   tx.add( (uint8_t)7 );
   tx.add( (uint8_t)8 );
   tx.add( (uint8_t)9 );
-  tx.add( (uint8_t)10 );
 
   // instruction parameter section
   tx.add_len<0>();
@@ -159,8 +155,6 @@ int main(int /*argc*/, char** /*argv*/)
   pythPID.init_from_text(std::string("3mPtGfRCBMQxvgGk7xG9RvYUH32ugb44AtMnjuPWWReo"));
   pc::pub_key pythPrice;
   pythPrice.init_from_text(std::string("7aeFDevae3EJ9efijjEb2oCUQxLD8GnnvzPngKVwx11u"));
-  pc::pub_key pythParam;
-  pythParam.init_from_text(std::string("CEvE1AmZDepzpzgxcMt63X3YRbHi9XgCVM1BbvotpXyN"));
 
   int64_t last = pc::get_now();
 
@@ -191,7 +185,6 @@ int main(int /*argc*/, char** /*argv*/)
       req->set_sysvar_clock(&sysvarClock);
       req->set_pyth_prog(&pythPID);
       req->set_pyth_price(&pythPrice);
-      req->set_pyth_param(&pythParam);
       mgr.submit(req);
     }
   }

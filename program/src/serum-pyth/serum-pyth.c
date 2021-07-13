@@ -15,10 +15,9 @@
 // 7) SPL Base Mint       []
 // 8) Sysvar Clock        []
 // 9) Pyth ProgramID      []
-// 10) Pyth Param         []
 extern uint64_t entrypoint(const uint8_t* input)
 {
-  SolAccountInfo input_accounts[11];
+  SolAccountInfo input_accounts[10];
   SolParameters input_params;
   input_params.ka = input_accounts;
   if (!sol_deserialize(input, &input_params, SOL_ARRAY_SIZE(input_accounts)))
@@ -36,7 +35,6 @@ extern uint64_t entrypoint(const uint8_t* input)
   const SolAccountInfo* account_spl_base_mint  = input_accounts + 7;
   const SolAccountInfo* account_sysvar_clock   = input_accounts + 8;
   const SolAccountInfo* account_pyth_prog      = input_accounts + 9;
-  const SolAccountInfo* account_pyth_param     = input_accounts + 10;
 
   sysvar_clock_t* clock; //TODO: Use direct syscall when it's supported
 
@@ -255,12 +253,10 @@ extern uint64_t entrypoint(const uint8_t* input)
 
   // key[0] funding account       [signer writable]
   // key[1] price account         [writable]
-  // key[2] param account         [readable]
-  // key[3] sysvar_clock account  [readable]
-  SolAccountMeta meta[4] = {
+  // key[2] sysvar_clock account  [readable]
+  SolAccountMeta meta[3] = {
     {account_payer->key, true, true},
     {account_pyth_price->key, true, false},
-    {account_pyth_param->key, false, false},
     {account_sysvar_clock->key, false, false},
   };
 

@@ -89,7 +89,7 @@ extern uint64_t entrypoint(const uint8_t* input)
         price->type_ != PC_ACCTYPE_PRICE ||
         price->ptype_ != PC_PTYPE_PRICE)
       return ERROR_INVALID_ACCOUNT_DATA;
-    pyth_exponent = -1 * price->expo_;
+    pyth_exponent = (__typeof__(pyth_exponent)) (-1 * price->expo_);
     if (pyth_exponent >= SOL_ARRAY_SIZE(TEN_TO_THE))
       return ERROR_INVALID_ACCOUNT_DATA;
   }

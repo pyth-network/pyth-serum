@@ -155,3 +155,18 @@ static bool trim_serum_padding(uint8_t** iter, uint64_t* left)
 
   return true;
 }
+
+// --- serum-pyth -------------------------------------------------------------
+
+// CI is half the bid-ask spread, adjusted for the best aggressive fee.
+// https://docs.pyth.network/publishers/confidence-interval-and-crypto-exchange-fees
+// spread = ask_adjusted - bid_adjusted
+//   = ask * (1.0 + fee) - bid * (1.0 - fee)
+//   = (ask - bid) + (ask + bid) * fee
+static inline uint64_t get_confidence(const uint64_t bid, const uint64_t ask)
+{
+  const uint64_t fee_bps = 10UL;  // TODO Read from config or serum API
+  uint64_t spread = (bid < ask) ? (ask - bid) : (bid - ask);
+  spread += (bid + ask) * fee_bps / 10000UL;
+  return spread / 2;
+}

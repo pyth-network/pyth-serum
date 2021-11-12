@@ -5,9 +5,57 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  PYTH_TAG: mainnet-v2.9.1
+  SERUM_TAG: v0.4.1
+  DOCKER_SERVER: docker.io
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
+
+      - name: Initialize Environment
+        run: |
+          set -eux
+          DOCKER_IMAGE="${GITHUB_REPOSITORY}:${GITHUB_REF##*/}"
+          echo "DOCKER_IMAGE=${DOCKER_IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Build Docker Image
+        run: |
+          set -eux
+
+          # GITHUB_WORKSPACE may be relative to "/".
+          cd /
+          cd "${GITHUB_WORKSPACE}"
+
+          docker build \
+            --file docker/Dockerfile \
+            --build-arg PYTH_TAG=${{ env.PYTH_TAG }} \
+            --build-arg SERUM_TAG=${{ env.SERUM_TAG }} \
+            --tag "${{ env.DOCKER_IMAGE }}" \
+            .
+
+      - name: Publish Docker Image
+        run: |
+          # Do not set -x before referencing secrets.
+          set -eu
+
+          echo "${{ secrets.DOCKER_IO_PASS }}" | docker login \
+            "${{ env.DOCKER_SERVER }}" \
+            -u "${{ secrets.DOCKER_IO_USER }}" \
+            --password-stdin
+
+          set -x
+          SRC="${{ env.DOCKER_IMAGE }}"
+          DST="${{ env.DOCKER_SERVER }}/${SRC}"
+          docker image tag "${SRC}" "${DST}"
+          docker image push "${DST}"
+
+        # Only publish if tagged as a release.
+        if: |
+          startsWith( github.ref, 'refs/tags/devnet-' )
+          || startsWith( github.ref, 'refs/tags/testnet-' )
+          || startsWith( github.ref, 'refs/tags/mainnet-' )

@@ -1,7 +1,13 @@
-#include <solana_sdk.h>
-
-#include "oracle/oracle.h"
 #include "serum-pyth.h"
+#include "oracle/oracle.h"
+
+#define BUF_CAST( name, type, buf_ptr, buf_size ) \
+  if ( SP_UNLIKELY( ( buf_size ) < sizeof( type ) ) ) { \
+    return ERROR_ACCOUNT_DATA_TOO_SMALL; \
+  } \
+  const type* const ( name ) = ( const type* ) ( buf_ptr ); \
+  ( buf_ptr ) += sizeof( type ); \
+  ( buf_size ) -= sizeof( type )
 
 // This program takes a single instruction, which has no binary data, and
 // expects the following accounts as parameters:
@@ -15,6 +21,7 @@
 // 7) SPL Base Mint       []
 // 8) Sysvar Clock        []
 // 9) Pyth ProgramID      []
+SP_UNUSED
 extern uint64_t entrypoint(const uint8_t* input)
 {
   SolAccountInfo input_accounts[10];
@@ -38,19 +45,7 @@ extern uint64_t entrypoint(const uint8_t* input)
 
   sysvar_clock_t* clock; //TODO: Use direct syscall when it's supported
 
-  uint8_t pyth_exponent = 0;
-  uint8_t quote_exponent = 0;
-  uint8_t base_exponent = 0;
-
-  uint64_t base_lot_size = 0;
-  uint64_t quote_lot_size = 0;
-
   bool trading = true;
-  uint64_t serum_bid = 0;
-  uint64_t serum_ask = 0;
-
-  uint64_t pyth_bid = 0;
-  uint64_t pyth_ask = 0;
 
   // Verify constraints on payer
   if (!account_payer->is_signer || !account_payer->is_writable)
@@ -76,6 +71,7 @@ extern uint64_t entrypoint(const uint8_t* input)
     return ERROR_INVALID_ARGUMENT;
 
   // Verify constraints on Pyth price account
+  sp_exponent_t pyth_exponent;
   {
     if (!SolPubkey_same(account_pyth_price->owner, account_pyth_prog->key))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -95,6 +91,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on SPL quote mint
+  sp_exponent_t quote_exponent;
   {
     if (!SolPubkey_same(account_spl_quote_mint->owner, &SPL_TOKEN_PROGRAM))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -106,6 +103,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on SPL base mint
+  sp_exponent_t base_exponent;
   {
     if (!SolPubkey_same(account_spl_base_mint->owner, &SPL_TOKEN_PROGRAM))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -117,6 +115,8 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on Serum market
+  sp_size_t base_lot_size;
+  sp_size_t quote_lot_size;
   {
     if (!SolPubkey_same(account_serum_market->owner, account_serum_prog->key))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -127,7 +127,7 @@ extern uint64_t entrypoint(const uint8_t* input)
       return ERROR_INVALID_ACCOUNT_DATA;
 
     BUF_CAST(flags, serum_flags_t, iter, left);
-    if (!flags->Initialized || !flags->Market || flags->Disabled || flags->Reserved)
+    if (!sp_flags_valid(flags, flags->Market))
       return ERROR_INVALID_ACCOUNT_DATA;
 
     BUF_CAST(market, serum_market_t, iter, left);
@@ -143,6 +143,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on Serum bids
+  sp_size_t serum_bid = 0;
   {
     if (!SolPubkey_same(account_serum_bids->owner, account_serum_prog->key))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -153,7 +154,7 @@ extern uint64_t entrypoint(const uint8_t* input)
       return ERROR_INVALID_ACCOUNT_DATA;
 
     BUF_CAST(flags, serum_flags_t, iter, left);
-    if (!flags->Initialized || !flags->Bids || flags->Disabled || flags->Reserved)
+    if (!sp_flags_valid(flags, flags->Bids))
       return ERROR_INVALID_ACCOUNT_DATA;
 
     BUF_CAST(book, serum_book_t, iter, left);
@@ -184,6 +185,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on Serum asks
+  sp_size_t serum_ask = 0;
   {
     if (!SolPubkey_same(account_serum_asks->owner, account_serum_prog->key))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -194,7 +196,7 @@ extern uint64_t entrypoint(const uint8_t* input)
       return ERROR_INVALID_ACCOUNT_DATA;
 
     BUF_CAST(flags, serum_flags_t, iter, left);
-    if (!flags->Initialized || !flags->Asks || flags->Disabled || flags->Reserved)
+    if (!sp_flags_valid(flags, flags->Asks))
       return ERROR_INVALID_ACCOUNT_DATA;
 
     BUF_CAST(book, serum_book_t, iter, left);
@@ -225,6 +227,8 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Convert Serum prices into Pyth formatted prices
+  sp_size_t pyth_bid = 0;
+  sp_size_t pyth_ask = 0;
   if (trading)
   {
     // Serum prices have units of [QuoteLot/BaseLot]. We need to convert to the
@@ -265,7 +269,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   cmd.cmd_ = e_cmd_upd_price;
   cmd.status_ = (trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN);
   cmd.unused_ = 0;
-  cmd.price_ = (pyth_bid + pyth_ask) / 2;
+  cmd.price_ = (int64_t)((pyth_bid + pyth_ask) / 2);
   cmd.conf_ = (pyth_bid < pyth_ask) ? ((pyth_ask - pyth_bid) / 2) : ((pyth_bid - pyth_ask) / 2);
   cmd.pub_slot_ = clock->slot_;
 

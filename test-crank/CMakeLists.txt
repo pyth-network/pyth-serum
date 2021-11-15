@@ -1,24 +1,53 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 3.13)
+CMAKE_MINIMUM_REQUIRED( VERSION 3.13 )
 
-PROJECT(serum-pyth-crank)
+PROJECT( serum-pyth-crank )
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_COMPILER g++)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_VERBOSE_MAKEFILE ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Werror -Wextra -g -ggdb")
+if( NOT PC )
+  set( PC ../../pyth-client )
+endif()
 
-set(SOURCES main.cpp)
-ADD_EXECUTABLE(serum-pyth-crank main.cpp)
+set( CMAKE_CXX_STANDARD 17 )
+set( CMAKE_CXX_STANDARD_REQUIRED ON )
+set( CMAKE_CXX_EXTENSIONS OFF )
+set( CMAKE_VERBOSE_MAKEFILE ON )
 
-FIND_PACKAGE(OpenSSL REQUIRED)
+ADD_COMPILE_OPTIONS(
+  -g
+  -ggdb
+  -m64
+  -Wall
+  -Werror
+  -Wextra
+  -Wsign-conversion
+)
 
-TARGET_INCLUDE_DIRECTORIES(serum-pyth-crank PRIVATE ../../pyth-client/)
-TARGET_INCLUDE_DIRECTORIES(serum-pyth-crank PRIVATE ../../pyth-client/program/src/)
+ADD_EXECUTABLE(
+  serum-pyth-crank
+  main.cpp
+)
 
-FIND_LIBRARY(L_PC libpc.a ../../pyth-client/build)
+TARGET_INCLUDE_DIRECTORIES(
+  serum-pyth-crank
+  PRIVATE
+  ${PC}
+  ${PC}/program/src
+)
 
-TARGET_LINK_LIBRARIES(serum-pyth-crank PRIVATE ${L_PC} OpenSSL::SSL OpenSSL::Crypto pthread z zstd)
+FIND_LIBRARY(
+  L_PC
+  libpc.a
+  ${PC}/build
+)
+
+TARGET_LINK_LIBRARIES(
+  serum-pyth-crank
+  PRIVATE
+  ${L_PC}
+  ssl
+  crypto
+  pthread
+  z
+  zstd
+)
 
 ENABLE_TESTING()

@@ -16,10 +16,15 @@ USER pyth
 WORKDIR /home/pyth
 COPY --chown=pyth:pyth . serum-pyth/
 
-# https://github.com/solana-labs/solana/issues/21198
-RUN sed -i \
-  's/\(^uint64_t sol_invoke_signed_c(\)/__attribute__(( weak )) \1/g' \
-  solana/sdk/bpf/c/inc/solana_sdk.h
+# Copy solana sdk and apply patch.
+RUN rm -rf solana
+RUN mkdir solana
+RUN cp -a /usr/bin/sdk solana
+RUN ./serum-pyth/scripts/patch-solana.sh
+
+# Build serum-pyth.so and serum-pyth-crank.
+RUN ./pyth-client/scripts/build.sh serum-pyth/build
+RUN ./serum-pyth/scripts/build-bpf.sh serum-pyth/program
 
 # Install serum-dex dependencies from:
 # https://github.com/Bonfida/serum-dex/blob/master/docker/development/Dockerfile
@@ -36,9 +41,8 @@ RUN git clone \
   "${SERUM_URL}" \
   serum-dex
 
-RUN ./pyth-client/scripts/build.sh serum-pyth/build
-RUN ./serum-pyth/scripts/build-bpf.sh serum-pyth/program
-RUN ./serum-pyth/scripts/build-dex.sh
+RUN CARGO_NET_OFFLINE=false \
+  ./serum-pyth/scripts/cargo-build.sh serum-dex/dex
 
 ENTRYPOINT []
 CMD []

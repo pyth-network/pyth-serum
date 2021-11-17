@@ -85,9 +85,7 @@ extern uint64_t entrypoint(const uint8_t* input)
         price->type_ != PC_ACCTYPE_PRICE ||
         price->ptype_ != PC_PTYPE_PRICE)
       return ERROR_INVALID_ACCOUNT_DATA;
-    pyth_exponent = (__typeof__(pyth_exponent)) (-1 * price->expo_);
-    if (pyth_exponent >= SOL_ARRAY_SIZE(TEN_TO_THE))
-      return ERROR_INVALID_ACCOUNT_DATA;
+    pyth_exponent = -1 * price->expo_;
   }
 
   // Verify constraints on SPL quote mint
@@ -98,8 +96,6 @@ extern uint64_t entrypoint(const uint8_t* input)
     if (account_spl_quote_mint->data_len != sizeof(spl_mint_t))
       return ERROR_ACCOUNT_DATA_TOO_SMALL;
     quote_exponent = ((spl_mint_t*) account_spl_quote_mint->data)->Decimals;
-    if (quote_exponent > pyth_exponent)
-      return ERROR_INVALID_ACCOUNT_DATA; //TODO: Support this later
   }
 
   // Verify constraints on SPL base mint
@@ -110,8 +106,6 @@ extern uint64_t entrypoint(const uint8_t* input)
     if (account_spl_base_mint->data_len != sizeof(spl_mint_t))
       return ERROR_ACCOUNT_DATA_TOO_SMALL;
     base_exponent = ((spl_mint_t*) account_spl_base_mint->data)->Decimals;
-    if (base_exponent > pyth_exponent)
-      return ERROR_INVALID_ACCOUNT_DATA; //TODO: Support this later
   }
 
   // Verify constraints on Serum market
@@ -229,25 +223,19 @@ extern uint64_t entrypoint(const uint8_t* input)
   // Convert Serum prices into Pyth formatted prices
   sp_size_t pyth_bid = 0;
   sp_size_t pyth_ask = 0;
-  if (trading)
-  {
-    // Serum prices have units of [QuoteLot/BaseLot]. We need to convert to the
-    // units that Pyth expects for this price account (based on the expo_ field).
-    //
-    // 1 [QuoteLot] = QuoteLotSize [QuoteNative]
-    // 1 [BaseLot]  = BaseLotSize  [BaseNative]
-    //
-    // 1 [QuoteNative] = 10^(PythExponent - QuoteNativeExponent) [Pyth]
-    // 1 [BaseNative]  = 10^(PythExponent - BaseNativeExponent)  [Pyth]
+  if ( SP_LIKELY( trading ) ) {
 
-    //TODO: Do checked math here. 128-bit for overflow?
-    uint64_t pyth_scalar = TEN_TO_THE[pyth_exponent];
-    uint64_t quote_lots_to_pyth = quote_lot_size * TEN_TO_THE[pyth_exponent - quote_exponent];
-    uint64_t base_lots_to_pyth = base_lot_size * TEN_TO_THE[pyth_exponent - base_exponent];
-    uint64_t serum_to_pyth =
-      ((uint64_t) quote_lots_to_pyth) *
-      ((uint64_t) pyth_scalar) /
-      ((uint64_t) base_lots_to_pyth);
+    const sp_size_t serum_to_pyth = sp_serum_to_pyth(
+      pyth_exponent,
+      quote_exponent,
+      base_exponent,
+      quote_lot_size,
+      base_lot_size
+    );
+
+    if ( SP_UNLIKELY( serum_to_pyth == SP_SIZE_OVERFLOW ) ) {
+      return ERROR_INVALID_ACCOUNT_DATA;
+    }
 
     pyth_bid = serum_bid * serum_to_pyth;
     pyth_ask = serum_ask * serum_to_pyth;

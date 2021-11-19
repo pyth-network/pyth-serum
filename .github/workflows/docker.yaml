@@ -20,17 +20,12 @@ jobs:
       - name: Initialize Environment
         run: |
           set -eux
-          DOCKER_IMAGE="${GITHUB_REPOSITORY}:${GITHUB_REF##*/}"
+          DOCKER_IMAGE="${GITHUB_REPOSITORY##*/}:${GITHUB_REF_NAME}"
           echo "DOCKER_IMAGE=${DOCKER_IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Build Docker Image
         run: |
           set -eux
-
-          # GITHUB_WORKSPACE may be relative to "/".
-          cd /
-          cd "${GITHUB_WORKSPACE}"
-
           docker build \
             --file docker/Dockerfile \
             --build-arg PYTH_TAG=${{ env.PYTH_TAG }} \
@@ -50,7 +45,7 @@ jobs:
 
           set -x
           SRC="${{ env.DOCKER_IMAGE }}"
-          DST="${{ env.DOCKER_SERVER }}/${SRC}"
+          DST="${{ env.DOCKER_SERVER }}/${{ secrets.DOCKER_IO_USER }}/${SRC}"
           docker image tag "${SRC}" "${DST}"
           docker image push "${DST}"
 

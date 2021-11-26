@@ -45,10 +45,7 @@ static const sp_size_t SP_POW10[] = {
   10000000000000000000ul,
 };
 
-// Reserve SP_POW10[ SP_EXP_MAX + 1 ]
-// for checking "x <= SP_SIZE_MAX / 10" before "x *= 10".
-static const sp_exponent_t SP_EXP_MAX = SOL_ARRAY_SIZE( SP_POW10 ) - 2;
-
+static const sp_exponent_t SP_EXP_MAX = SOL_ARRAY_SIZE( SP_POW10 ) - 1;
 static const sp_size_t SP_SIZE_OVERFLOW = UINT64_MAX;
 static const sp_size_t SP_SIZE_MAX = SP_SIZE_OVERFLOW - 1;
 
@@ -58,14 +55,14 @@ sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_exponent_t exp )
 {
   if ( SP_LIKELY( exp >= 0 ) ) {
     while ( SP_UNLIKELY( exp > SP_EXP_MAX ) ) {
-      if ( numer > SP_SIZE_MAX / 10 ) {
+      if ( numer >= SP_SIZE_MAX / 10 ) {
         return SP_SIZE_OVERFLOW;
       }
       exp -= 1;
       numer *= 10;
     }
     const sp_size_t scale = SP_POW10[ exp ];
-    if ( SP_UNLIKELY( SP_SIZE_MAX / scale <= numer ) ) {
+    if ( SP_UNLIKELY( numer >= SP_SIZE_MAX / scale ) ) {
       return SP_SIZE_OVERFLOW;
     }
     numer *= scale;
@@ -73,22 +70,24 @@ sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_exponent_t exp )
 
   else {  // exp < 0
     while ( SP_UNLIKELY( -exp > SP_EXP_MAX ) ) {
-      if ( denom > SP_SIZE_MAX / 10 ) {
+      if ( denom >= SP_SIZE_MAX / 10 ) {
         return 0;
       }
       exp += 1;
       denom *= 10;
     }
     const sp_size_t scale = SP_POW10[ -exp ];
-    if ( SP_UNLIKELY( SP_SIZE_MAX / scale <= denom ) ) {
+    if ( SP_UNLIKELY( denom >= SP_SIZE_MAX / scale ) ) {
       return 0;
     }
     denom *= scale;
   }
 
-  return SP_LIKELY( denom > 0 )
+  return (
+    SP_LIKELY( denom > 0 )
     ? ( numer / denom )
-    : SP_SIZE_OVERFLOW;
+    : SP_SIZE_OVERFLOW
+  );
 }
 
 // Return a multiplier for converting serum prices to pyth.
@@ -120,7 +119,7 @@ static inline sp_size_t
 sp_confidence( const sp_size_t bid, const sp_size_t ask )
 {
   const sp_size_t fee_bps = 10ul;  // TODO Load from config or serum-dex.
-  sp_size_t spread = ( bid < ask ) ? ( ask - bid ) : ( bid - ask );
+  sp_size_t spread = SP_LIKELY( bid < ask ) ? ( ask - bid ) : ( bid - ask );
   spread += ( bid + ask ) * fee_bps / 10000ul;
   return spread / 2;
 }

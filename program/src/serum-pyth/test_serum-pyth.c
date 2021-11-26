@@ -9,7 +9,6 @@ char heap_start[ 8192 ];
 #define SP_ASSERT_ALL 1
 
 #if SP_ASSERT_ALL
-#define sp_test cr_expect
 #define sp_test_eq cr_expect_eq
 #define sp_test_ne cr_expect_neq
 #define sp_test_le cr_expect_leq
@@ -17,7 +16,6 @@ char heap_start[ 8192 ];
 #define sp_test_ge cr_expect_geq
 #define sp_test_gt cr_expect_gt
 #else
-#define sp_test cr_assert
 #define sp_test_eq cr_assert_eq
 #define sp_test_ne cr_assert_neq
 #define sp_test_le cr_assert_leq
@@ -34,16 +32,81 @@ Test( serum_pyth, constants ) {
 
   sp_test_gt( SP_SIZE_MAX, 0 );
   sp_test_lt( SP_SIZE_MAX, SP_SIZE_OVERFLOW );
-  sp_test_gt( SP_SIZE_MAX / 10, SP_POW10[ SP_EXP_MAX ] );
+  sp_test_gt( SP_SIZE_MAX, SP_POW10[ SP_EXP_MAX ] );
 
   sp_size_t pow10 = SP_POW10[ 0 ];
+  sp_test_eq( pow10, 1 );
   for ( unsigned e = 1; e < SOL_ARRAY_SIZE( SP_POW10 ); ++e ) {
     sp_test_gt( pow10, 0 );
-    sp_test_ge( SP_SIZE_MAX / 10, pow10 );
+    sp_test_gt( SP_SIZE_MAX / 10, pow10 );
     pow10 *= 10;
     sp_test_eq( SP_POW10[ e ], pow10 );
   }
 
+}
+
+#define sp_test_div( numer, denom, expo, expected ) sp_test_eq( \
+  sp_pow10_divide( numer, denom, expo ), \
+  expected, \
+  "sp_pow10_divide(%lu, %lu, %d) == %lu != %lu", \
+  ( sp_size_t )( numer ), \
+  ( sp_size_t )( denom ), \
+  ( sp_exponent_t )( expo ), \
+  sp_pow10_divide( numer, denom, expo ), \
+  ( sp_size_t )( expected ) \
+)
+
+Test( serum_pyth, pow10_divide ) {
+
+  sp_test_div( 0, 1, 0, 0 );
+  sp_test_div( 0, 1, 1, 0 );
+  sp_test_div( 0, 1, -1, 0 );
+
+  sp_test_div( 1, 1, 0, 1 );
+  sp_test_div( 1, 1, 1, 10 );
+  sp_test_div( 1, 1, -1, 0 );
+
+  sp_test_div( 0, 0, 0, SP_SIZE_OVERFLOW );
+  sp_test_div( 0, 0, 1, SP_SIZE_OVERFLOW );
+  sp_test_div( 1, 0, 0, SP_SIZE_OVERFLOW );
+  sp_test_div( 1, 0, 1, SP_SIZE_OVERFLOW );
+
+  sp_test_div( 1, 2, 0, 0 );
+  sp_test_div( 1, 2, 1, 5 );
+  sp_test_div( 10, 2, -1, 0 );
+  sp_test_div( 100, 2, -1, 5 );
+
+  sp_test_div( 2, 1, 0, 2 );
+  sp_test_div( 2, 1, 1, 20 );
+  sp_test_div( 20, 1, -1, 2 );
+  sp_test_div( 200, 1, -1, 20 );
+
+  sp_test_div( 5, 2, 0, 2 );
+  sp_test_div( 5, 2, 1, 25 );
+  sp_test_div( 50, 2, -1, 2 );
+  sp_test_div( 500, 2, -1, 25 );
+
+  for ( sp_exponent_t e = 0; e < SP_EXP_MAX; ++e ) {
+    const sp_size_t pow10 = SP_POW10[ e ];
+    sp_test_div( 1, 1, e, pow10 );
+    sp_test_div( 1, 2, e, pow10 / 2 );
+    sp_test_div( 3, 4, e, pow10 * 3 / 4 );
+    sp_test_div( pow10, 1, -e, 1 );
+    sp_test_div( pow10, 5, 1 - e, 2 );
+    sp_test_div( pow10, 4, 2 - e, 25 );
+    if ( e > 0 ) {
+      sp_test_div( 3, pow10 / 5, e, 15 );
+    }
+  }
+
+  for ( sp_size_t n = 0; n < 20; ++n ) {
+    for ( sp_size_t d = 1; d < 20; ++d ) {
+      sp_test_div( n, d, 0, n / d );
+      sp_test_div( n, d, 1, n * 10 / d );
+      sp_test_div( n * 10, d, -1, n / d );
+      sp_test_div( n * 100, d, -1, n * 10 / d );
+    }
+  }
 }
 
 // Assert pyth-client allocations use test heap.
@@ -62,7 +125,7 @@ Test( serum_pyth, heap_start ) {
   ( sp_size_t )( bid ), \
   ( sp_size_t )( ask ), \
   sp_confidence( bid, ask ), \
-  ( sp_size_t )( expected )\
+  ( sp_size_t )( expected ) \
 )
 
 Test( serum_pyth, confidence ) {

@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  PYTH_TAG: mainnet-v2.9.1
+  PYTH_TAG: devnet-v2.9.2
   SERUM_TAG: v0.4.1
   DOCKER_HUB: docker.io
   DOCKER_USER: ${{ secrets.DOCKER_IO_USER }}

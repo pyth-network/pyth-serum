@@ -16,18 +16,13 @@ USER pyth
 WORKDIR /home/pyth
 COPY --chown=pyth:pyth . serum-pyth/
 
-# Copy solana sdk and apply patch.
-RUN rm -rf solana
-RUN mkdir solana
-RUN cp -a /usr/bin/sdk solana
-RUN ./serum-pyth/scripts/patch-solana.sh
-
 # Build serum-pyth.so and serum-pyth-crank.
 RUN ./pyth-client/scripts/build.sh serum-pyth/build
-RUN ./serum-pyth/scripts/build-bpf.sh serum-pyth/program
+RUN ./pyth-client/scripts/build-bpf.sh serum-pyth/program
 
 # Install serum-dex dependencies from:
 # https://github.com/Bonfida/serum-dex/blob/master/docker/development/Dockerfile
+RUN sudo apt-get update
 RUN sudo apt-get install -qq \
   build-essential \
   jq \

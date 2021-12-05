@@ -6,10 +6,14 @@ extern "C" {
 
 #include <solana_sdk.h>
 
+// 'SUCCESS' is too generic for global namespace.
+typedef uint64_t sp_errcode_t;
+static const sp_errcode_t SP_NO_ERROR = SUCCESS;
+
 #define SP_PACKED __attribute__(( __packed__ ))
 #define SP_UNUSED __attribute__(( __unused__ ))
 
-#define SP_LIKELY( cond ) __builtin_expect( cond, true )
+#define SP_LIKELY( cond )   __builtin_expect( cond, true )
 #define SP_UNLIKELY( cond ) __builtin_expect( cond, false )
 
 #define SP_ASSERT_SIZE( t, s ) \
@@ -50,9 +54,11 @@ static const sp_size_t SP_SIZE_OVERFLOW = UINT64_MAX;
 static const sp_size_t SP_SIZE_MAX = SP_SIZE_OVERFLOW - 1;
 
 // Calculate 10^exp * numer / denom
-static inline sp_size_t
-sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_expo_t exp )
-{
+static inline sp_size_t sp_pow10_divide(
+  sp_size_t numer,
+  sp_size_t denom,
+  sp_expo_t exp
+) {
   if ( SP_LIKELY( exp >= 0 ) ) {
     while ( SP_UNLIKELY( exp > SP_EXP_MAX ) ) {
       if ( numer >= SP_SIZE_MAX / 10 ) {
@@ -93,14 +99,13 @@ sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_expo_t exp )
 // Return a multiplier for converting serum prices to pyth.
 // Serum prices have units of QuoteLot/BaseLot.
 //
-static inline sp_size_t
-sp_serum_to_pyth(
-  const sp_expo_t pyth_exp,   // pc_price_t::expo_
-  const sp_expo_t quote_exp,  // spl_mint::Decimals
-  const sp_expo_t base_exp,   // spl_mint::Decimals
+static inline sp_size_t sp_serum_to_pyth(
+  const sp_expo_t pyth_exp,       // pc_price_t::expo_
+  const sp_expo_t quote_exp,      // spl_mint::Decimals
+  const sp_expo_t base_exp,       // spl_mint::Decimals
   const sp_size_t quote_lotsize,  // serum_market_t::BaseLotSize
-  const sp_size_t base_lotsize )  // serum_market_t::QuoteLotSize
-{
+  const sp_size_t base_lotsize    // serum_market_t::QuoteLotSize
+) {
   // scale = 10^pyth_exp / ( 10^quote_exp / 10^base_exp )
   //       = 10( pyth_exp + base_exp - quote_exp )
   // return scale * quote_lotsize / base_lotsize
@@ -122,9 +127,10 @@ static inline sp_size_t sp_midpt( const sp_size_t bid, const sp_size_t ask )
 //        = ask * (1.0 + fee) - bid * (1.0 - fee)
 //        = (ask - bid) + (ask + bid) * fee
 //
-static inline sp_size_t
-sp_confidence( const sp_size_t bid, const sp_size_t ask )
-{
+static inline sp_size_t sp_confidence(
+  const sp_size_t bid,
+  const sp_size_t ask
+) {
   const sp_size_t fee_bps = 10ul;  // TODO Load from config or serum-dex.
   sp_size_t spread = SP_LIKELY( bid < ask ) ? ( ask - bid ) : ( bid - ask );
   spread += ( bid + ask ) * fee_bps / 10000ul;

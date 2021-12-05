@@ -7,6 +7,7 @@ char heap_start[ 8192 ];
 #include <serum-pyth/serum-pyth.c> // NOLINT(bugprone-suspicious-include)
 #include <serum-pyth/tests/assert.h>
 #include <serum-pyth/tests/confidence.h>
+#include <serum-pyth/tests/instruction.h>
 #include <serum-pyth/tests/math.h>
 #include <serum-pyth/tests/serum_to_pyth.h>
 
@@ -22,4 +23,5 @@ Test( serum_pyth, confidence ) { sp_test_confidence(); }
 Test( serum_pyth, constants ) { sp_test_constants(); }
 Test( serum_pyth, midpt ) { sp_test_midpt(); }
 Test( serum_pyth, pow10_divide ) { sp_test_pow10div(); }
+Test( serum_pyth, pyth_instruction ) { sp_test_pyth_instruction(); }
 Test( serum_pyth, serum_to_pyth ) { sp_test_serum_to_pyth(); }

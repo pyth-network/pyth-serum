@@ -3,6 +3,22 @@
 #include <serum-pyth/sp-util.h>
 #include <serum-pyth/tests/assert.h>
 
+static void sp_assert_midpt(
+  const sp_size_t bid,
+  const sp_size_t ask,
+  const sp_size_t expected
+) {
+    sp_assert_eq(
+      sp_midpt( bid, ask ),
+      expected,
+      "sp_midpt(%lu, %lu) == %lu != %lu",
+      bid,
+      ask,
+      sp_midpt( bid, ask ),
+      expected
+    );
+}
+
 static void sp_assert_pow10div(
   const sp_size_t numer,
   const sp_size_t denom,
@@ -40,6 +56,22 @@ static void sp_test_constants()
     sp_assert_size_eq( SP_POW10[ e ], pow10 );
   }
 
+}
+
+static void sp_test_midpt()
+{
+  for ( unsigned i = 0; i <= 5; ++i ) {
+    for ( unsigned j = 0; j <= 5; ++j ) {
+      unsigned const mid = ( i + j ) / 2;
+      unsigned const mod = ( i + j ) % 2;
+      sp_assert_midpt( i, j, mid );
+      sp_assert_midpt(
+        SP_SIZE_MAX - i,
+        SP_SIZE_MAX - j,
+        SP_SIZE_MAX - mid - mod
+      );
+    }
+  }
 }
 
 static void sp_test_pow10div()

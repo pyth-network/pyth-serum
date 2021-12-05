@@ -157,24 +157,62 @@ typedef struct SP_PACKED serum_node_leaf
 
 SP_ASSERT_SIZE( serum_node_leaf_t, 72 );
 
-static inline bool
-trim_serum_padding( uint8_t** const iter, uint64_t* const left )
-{
-  if (*left < 5 || sol_memcmp(*iter, "serum", 5) != 0)
-    return false;
-  *iter = *iter + 5;
-  *left = *left - 5;
+static const char SERUM_HEADER[] = "serum";
+static const char SERUM_FOOTER[] = "padding";
 
-  if (*left < 7 || sol_memcmp(*iter + *left - 7, "padding", 7) != 0)
+// No trailing '\0':
+#define SERUM_HEADER_LEN ( sizeof( SERUM_HEADER ) - 1 )
+#define SERUM_FOOTER_LEN ( sizeof( SERUM_FOOTER ) - 1 )
+
+static_assert( SERUM_HEADER_LEN == 5, "" );
+static_assert( SERUM_FOOTER_LEN == 7, "" );
+
+static inline bool sp_has_serum_header(
+  const uint8_t* const buf,
+  const uint64_t len
+) {
+  return SP_LIKELY( len >= SERUM_HEADER_LEN ) && SP_LIKELY( ! sol_memcmp(
+    buf,
+    SERUM_HEADER,
+    SERUM_HEADER_LEN
+  ) );
+}
+
+static inline bool sp_has_serum_footer(
+  const uint8_t* const buf,
+  const uint64_t len
+) {
+  return SP_LIKELY( len >= SERUM_FOOTER_LEN ) && SP_LIKELY( ! sol_memcmp(
+    buf + len - SERUM_FOOTER_LEN,
+    SERUM_FOOTER,
+    SERUM_FOOTER_LEN
+  ) );
+}
+
+static inline bool trim_serum_padding(
+  uint8_t** const iter,
+  uint64_t* const left
+) {
+  if ( ! sp_has_serum_header( *iter, *left ) ) {
     return false;
-  *left = *left - 7;
+  }
+
+  *iter += SERUM_HEADER_LEN;
+  *left -= SERUM_HEADER_LEN;
+
+  if ( ! sp_has_serum_footer( *iter, *left ) ) {
+    return false;
+  }
+
+  *left -= SERUM_FOOTER_LEN;
 
   return true;
 }
 
-static inline bool
-sp_flags_valid( const serum_flags_t* const flags, const uint64_t field )
-{
+static inline bool sp_flags_valid(
+  const serum_flags_t* const flags,
+  const uint64_t field
+) {
   return (
     SP_LIKELY( !! field )
     && SP_LIKELY( !! flags->Initialized )

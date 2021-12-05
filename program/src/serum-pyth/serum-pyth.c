@@ -1,6 +1,48 @@
 #include <serum-pyth/serum-pyth.h>
 #include <oracle/oracle.h>
 
+// This program takes a single instruction with no binary data
+// and the following accounts as parameters:
+enum
+{
+  SP_ACC_PAYER,         // [signer,writeable]
+  SP_ACC_PYTH_PRICE,    // [writeable]
+  SP_ACC_SERUM_PROG,    // []
+  SP_ACC_SERUM_MARKET,  // []
+  SP_ACC_SERUM_BIDS,    // []
+  SP_ACC_SERUM_ASKS,    // []
+  SP_ACC_QUOTE_MINT,    // []
+  SP_ACC_BASE_MINT,     // []
+  SP_ACC_SYSVAR_CLOCK,  // []
+  SP_ACC_PYTH_PROG,     // []
+
+  SP_NUM_ACCOUNTS
+};
+static_assert( SP_NUM_ACCOUNTS == 10, "" );
+
+// Account metadata for invoking pyth-client:
+enum
+{
+  SP_META_PAYER,         // [signer writable]
+  SP_META_PYTH_PRICE,    // [writeable]
+  SP_META_SYSVAR_CLOCK,  // []
+
+  SP_NUM_META
+};
+static_assert( SP_NUM_META == 3, "" );
+
+typedef struct
+{
+  SolAccountInfo accounts[ SP_NUM_ACCOUNTS ];
+} sp_program_input_t;
+
+typedef struct
+{
+  SolInstruction inst;
+  SolAccountMeta meta[ SP_NUM_META ];
+  cmd_upd_price_t cmd;
+} sp_pyth_instruction_t;
+
 #define BUF_CAST( name, type, buf_ptr, buf_size ) \
   if ( SP_UNLIKELY( ( buf_size ) < sizeof( type ) ) ) { \
     return ERROR_ACCOUNT_DATA_TOO_SMALL; \
@@ -9,41 +51,22 @@
   ( buf_ptr ) += sizeof( type ); \
   ( buf_size ) -= sizeof( type )
 
-// This program takes a single instruction, which has no binary data, and
-// expects the following accounts as parameters:
-// 0) Payer               [signer,writeable]
-// 1) Pyth Price          [writeable]
-// 2) Serum ProgramID     []
-// 3) Serum Market        []
-// 4) Serum Bids          []
-// 5) Serum Asks          []
-// 6) SPL Quote Mint      []
-// 7) SPL Base Mint       []
-// 8) Sysvar Clock        []
-// 9) Pyth ProgramID      []
-SP_UNUSED
-extern uint64_t entrypoint(const uint8_t* input)
-{
-  SolAccountInfo input_accounts[10];
-  SolParameters input_params;
-  input_params.ka = input_accounts;
-  if (!sol_deserialize(input, &input_params, SOL_ARRAY_SIZE(input_accounts)))
-    return ERROR_INVALID_ARGUMENT;
-  if (input_params.ka_num != SOL_ARRAY_SIZE(input_accounts))
-    return ERROR_NOT_ENOUGH_ACCOUNT_KEYS;
+static inline sp_errcode_t sp_get_pyth_instruction(
+  const sp_program_input_t* const input,
+  sp_pyth_instruction_t* const output
+) {
 
-  const SolAccountInfo* account_payer          = input_accounts + 0;
-  const SolAccountInfo* account_pyth_price     = input_accounts + 1;
-  const SolAccountInfo* account_serum_prog     = input_accounts + 2;
-  const SolAccountInfo* account_serum_market   = input_accounts + 3;
-  const SolAccountInfo* account_serum_bids     = input_accounts + 4;
-  const SolAccountInfo* account_serum_asks     = input_accounts + 5;
-  const SolAccountInfo* account_spl_quote_mint = input_accounts + 6;
-  const SolAccountInfo* account_spl_base_mint  = input_accounts + 7;
-  const SolAccountInfo* account_sysvar_clock   = input_accounts + 8;
-  const SolAccountInfo* account_pyth_prog      = input_accounts + 9;
-
-  sysvar_clock_t* clock; //TODO: Use direct syscall when it's supported
+  const SolAccountInfo
+    *const account_payer          = &input->accounts[ SP_ACC_PAYER ],
+    *const account_pyth_price     = &input->accounts[ SP_ACC_PYTH_PRICE ],
+    *const account_serum_prog     = &input->accounts[ SP_ACC_SERUM_PROG ],
+    *const account_serum_market   = &input->accounts[ SP_ACC_SERUM_MARKET ],
+    *const account_serum_bids     = &input->accounts[ SP_ACC_SERUM_BIDS ],
+    *const account_serum_asks     = &input->accounts[ SP_ACC_SERUM_ASKS ],
+    *const account_spl_quote_mint = &input->accounts[ SP_ACC_QUOTE_MINT ],
+    *const account_spl_base_mint  = &input->accounts[ SP_ACC_BASE_MINT ],
+    *const account_sysvar_clock   = &input->accounts[ SP_ACC_SYSVAR_CLOCK ],
+    *const account_pyth_prog      = &input->accounts[ SP_ACC_PYTH_PROG ];
 
   bool trading = true;
 
@@ -59,7 +82,6 @@ extern uint64_t entrypoint(const uint8_t* input)
       return ERROR_INVALID_ARGUMENT;
     if (account_sysvar_clock->data_len != sizeof(sysvar_clock_t))
       return ERROR_ACCOUNT_DATA_TOO_SMALL;
-    clock = (sysvar_clock_t*) account_sysvar_clock->data;
   }
 
   // Verify constraints on Pyth program ID
@@ -241,32 +263,72 @@ extern uint64_t entrypoint(const uint8_t* input)
     pyth_ask = serum_ask * serum_to_pyth;
   }
 
-  // Publish update to Pyth via cross-program invokation
+  // Prepare pyth-client instruction for cross-program invocation.
+  cmd_upd_price_t* const cmd = &output->cmd;
+  cmd->ver_ = PC_VERSION;
+  cmd->cmd_ = e_cmd_upd_price;
+  cmd->status_ = ( trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN );
+  cmd->unused_ = 0;
+  cmd->price_ = ( int64_t ) sp_midpt( pyth_bid, pyth_ask );
+  cmd->conf_ = sp_confidence( pyth_bid, pyth_ask );
+  cmd->pub_slot_ = (  // TODO: Use direct syscall.
+    ( const sysvar_clock_t* ) account_sysvar_clock->data
+  )->slot_;
 
-  // key[0] funding account       [signer writable]
-  // key[1] price account         [writable]
-  // key[2] sysvar_clock account  [readable]
-  SolAccountMeta meta[3] = {
-    {account_payer->key, true, true},
-    {account_pyth_price->key, true, false},
-    {account_sysvar_clock->key, false, false},
-  };
+  {
+    SolAccountMeta *const payer_meta = &output->meta[ SP_META_PAYER ];
+    payer_meta->pubkey = account_payer->key;
+    payer_meta->is_writable = true;
+    payer_meta->is_signer = true;
+  }
+  {
+    SolAccountMeta *const price_meta = &output->meta[ SP_META_PYTH_PRICE ];
+    price_meta->pubkey = account_pyth_price->key;
+    price_meta->is_writable = true;
+    price_meta->is_signer = false;
+  }
+  {
+    SolAccountMeta *const clock_meta = &output->meta[ SP_META_SYSVAR_CLOCK ];
+    clock_meta->pubkey = account_sysvar_clock->key;
+    clock_meta->is_writable = false;
+    clock_meta->is_signer = false;
+  }
+  {
+    SolInstruction* const inst = &output->inst;
+    inst->program_id = account_pyth_prog->key;
+    inst->accounts = output->meta;
+    inst->account_len = SP_NUM_META;
+    inst->data = ( uint8_t* ) cmd;
+    inst->data_len = sizeof( *cmd );
+  }
 
-  cmd_upd_price_t cmd;
-  cmd.ver_ = PC_VERSION;
-  cmd.cmd_ = e_cmd_upd_price;
-  cmd.status_ = (trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN);
-  cmd.unused_ = 0;
-  cmd.price_ = ( int64_t ) sp_midpt( pyth_bid, pyth_ask );
-  cmd.conf_ = sp_confidence( pyth_bid, pyth_ask );
-  cmd.pub_slot_ = clock->slot_;
+  return SP_NO_ERROR;
+}
 
-  SolInstruction inst;
-  inst.program_id = account_pyth_prog->key;
-  inst.accounts = meta;
-  inst.account_len = SOL_ARRAY_SIZE(meta);
-  inst.data = (uint8_t*) &cmd;
-  inst.data_len = sizeof(cmd);
+SP_UNUSED
+extern sp_errcode_t entrypoint( const uint8_t* const buf )
+{
+  sp_program_input_t input;
+  SolParameters params;
+  params.ka = input.accounts;
 
-  return sol_invoke(&inst, input_accounts, SOL_ARRAY_SIZE(input_accounts));
+  const bool valid = sol_deserialize( buf, &params, SP_NUM_ACCOUNTS );
+  if ( SP_UNLIKELY( ! valid ) ) {
+    return ERROR_INVALID_ARGUMENT;
+  }
+  if ( SP_UNLIKELY( params.ka_num != SP_NUM_ACCOUNTS ) ) {
+    return ERROR_NOT_ENOUGH_ACCOUNT_KEYS;
+  }
+
+  sp_pyth_instruction_t inst;
+  const sp_errcode_t err = sp_get_pyth_instruction( &input, &inst );
+  if ( SP_UNLIKELY( err != SP_NO_ERROR ) ) {
+    return err;
+  }
+
+  return sol_invoke(
+    &inst.inst,
+    input.accounts,
+    SP_NUM_ACCOUNTS
+  );
 }

@@ -4,9 +4,9 @@
 #include <serum-pyth/tests/assert.h>
 
 static void sp_assert_s2p(
-  const sp_exponent_t pyth_exp,
-  const sp_exponent_t quote_exp,
-  const sp_exponent_t base_exp,
+  const sp_expo_t pyth_exp,
+  const sp_expo_t quote_exp,
+  const sp_expo_t base_exp,
   const sp_size_t quote_lotsize,
   const sp_size_t base_lotsize,
   const sp_size_t expected_s2p

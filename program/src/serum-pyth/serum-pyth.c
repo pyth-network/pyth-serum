@@ -71,7 +71,7 @@ extern uint64_t entrypoint(const uint8_t* input)
     return ERROR_INVALID_ARGUMENT;
 
   // Verify constraints on Pyth price account
-  sp_exponent_t pyth_exponent;
+  sp_expo_t pyth_exponent;
   {
     if (!SolPubkey_same(account_pyth_price->owner, account_pyth_prog->key))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -89,7 +89,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on SPL quote mint
-  sp_exponent_t quote_exponent;
+  sp_expo_t quote_exponent;
   {
     if (!SolPubkey_same(account_spl_quote_mint->owner, &SPL_TOKEN_PROGRAM))
       return ERROR_INCORRECT_PROGRAM_ID;
@@ -99,7 +99,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   }
 
   // Verify constraints on SPL base mint
-  sp_exponent_t base_exponent;
+  sp_expo_t base_exponent;
   {
     if (!SolPubkey_same(account_spl_base_mint->owner, &SPL_TOKEN_PROGRAM))
       return ERROR_INCORRECT_PROGRAM_ID;

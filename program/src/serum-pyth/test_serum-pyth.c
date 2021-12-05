@@ -2,7 +2,7 @@
 char heap_start[ 8192 ];
 #define PC_HEAP_START ( heap_start )
 
-#include "serum-pyth.c" // NOLINT(bugprone-suspicious-include)
+#include <serum-pyth/serum-pyth.c> // NOLINT(bugprone-suspicious-include)
 #include <criterion/criterion.h>
 
 // Turn off to stop test suites on first failure.

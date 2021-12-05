@@ -21,7 +21,10 @@ function( add_bpf_lib targ )
     set_property( TARGET ${targ} PROPERTY C_STANDARD_REQUIRED ON )
     set_property( TARGET ${targ} PROPERTY C_EXTENSIONS OFF )
     target_compile_definitions( ${targ} PRIVATE __bpf__=1 )
-    target_include_directories( ${targ} PRIVATE ${PC}/program/src )
+    target_include_directories( ${targ} PRIVATE
+      program/src
+      ${PC}/program/src
+    )
     target_include_directories( ${targ} SYSTEM PRIVATE
       ${BPF}/c/inc
       ${BPF}/dependencies/criterion/include

@@ -4,7 +4,7 @@
 extern "C" {
 #endif
 
-#include "sp-util.h"
+#include <serum-pyth/sp-util.h>
 
 // --- SPL Token Program -------------------------------------------------------
 

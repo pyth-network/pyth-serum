@@ -1,5 +1,5 @@
-#include "serum-pyth.h"
-#include "oracle/oracle.h"
+#include <serum-pyth/serum-pyth.h>
+#include <oracle/oracle.h>
 
 #define BUF_CAST( name, type, buf_ptr, buf_size ) \
   if ( SP_UNLIKELY( ( buf_size ) < sizeof( type ) ) ) { \

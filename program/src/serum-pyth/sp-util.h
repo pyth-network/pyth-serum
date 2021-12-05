@@ -17,7 +17,7 @@ extern "C" {
 
 // decltype( pc_price_t::expo_ )
 // Wide and signed to catch overflow/underflow.
-typedef int32_t sp_exponent_t;
+typedef int32_t sp_expo_t;
 
 // decltype( serum_market::BaseLotSize ), etc.
 typedef uint64_t sp_size_t;
@@ -45,13 +45,13 @@ static const sp_size_t SP_POW10[] = {
   10000000000000000000ul,
 };
 
-static const sp_exponent_t SP_EXP_MAX = SOL_ARRAY_SIZE( SP_POW10 ) - 1;
+static const sp_expo_t SP_EXP_MAX = SOL_ARRAY_SIZE( SP_POW10 ) - 1;
 static const sp_size_t SP_SIZE_OVERFLOW = UINT64_MAX;
 static const sp_size_t SP_SIZE_MAX = SP_SIZE_OVERFLOW - 1;
 
 // Calculate 10^exp * numer / denom
 static inline sp_size_t
-sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_exponent_t exp )
+sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_expo_t exp )
 {
   if ( SP_LIKELY( exp >= 0 ) ) {
     while ( SP_UNLIKELY( exp > SP_EXP_MAX ) ) {
@@ -95,16 +95,16 @@ sp_pow10_divide( sp_size_t numer, sp_size_t denom, sp_exponent_t exp )
 //
 static inline sp_size_t
 sp_serum_to_pyth(
-  const sp_exponent_t pyth_exp,   // pc_price_t::expo_
-  const sp_exponent_t quote_exp,  // spl_mint::Decimals
-  const sp_exponent_t base_exp,   // spl_mint::Decimals
+  const sp_expo_t pyth_exp,   // pc_price_t::expo_
+  const sp_expo_t quote_exp,  // spl_mint::Decimals
+  const sp_expo_t base_exp,   // spl_mint::Decimals
   const sp_size_t quote_lotsize,  // serum_market_t::BaseLotSize
   const sp_size_t base_lotsize )  // serum_market_t::QuoteLotSize
 {
   // scale = 10^pyth_exp / ( 10^quote_exp / 10^base_exp )
   //       = 10( pyth_exp + base_exp - quote_exp )
   // return scale * quote_lotsize / base_lotsize
-  const sp_exponent_t scale_exp = pyth_exp + base_exp - quote_exp;
+  const sp_expo_t scale_exp = pyth_exp + base_exp - quote_exp;
   return sp_pow10_divide( quote_lotsize, base_lotsize, scale_exp );
 }
 

@@ -6,7 +6,7 @@
 static void sp_assert_pow10div(
   const sp_size_t numer,
   const sp_size_t denom,
-  const sp_exponent_t expo,
+  const sp_expo_t expo,
   const sp_size_t expected
 ) {
   sp_assert_eq(
@@ -72,7 +72,7 @@ static void sp_test_pow10div()
   sp_assert_pow10div( 50, 2, -1, 2 );
   sp_assert_pow10div( 500, 2, -1, 25 );
 
-  for ( sp_exponent_t e = 0; e < SP_EXP_MAX; ++e ) {
+  for ( sp_expo_t e = 0; e < SP_EXP_MAX; ++e ) {
     const sp_size_t pow10 = SP_POW10[ e ];
     sp_assert_pow10div( 1, 1, e, pow10 );
     sp_assert_pow10div( 1, 2, e, pow10 / 2 );

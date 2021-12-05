@@ -20,5 +20,6 @@ Test( serum_pyth, heap_start )
 
 Test( serum_pyth, confidence ) { sp_test_confidence(); }
 Test( serum_pyth, constants ) { sp_test_constants(); }
+Test( serum_pyth, midpt ) { sp_test_midpt(); }
 Test( serum_pyth, pow10_divide ) { sp_test_pow10div(); }
 Test( serum_pyth, serum_to_pyth ) { sp_test_serum_to_pyth(); }

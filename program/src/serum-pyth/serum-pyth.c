@@ -257,7 +257,7 @@ extern uint64_t entrypoint(const uint8_t* input)
   cmd.cmd_ = e_cmd_upd_price;
   cmd.status_ = (trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN);
   cmd.unused_ = 0;
-  cmd.price_ = (int64_t)((pyth_bid + pyth_ask) / 2);
+  cmd.price_ = ( int64_t ) sp_midpt( pyth_bid, pyth_ask );
   cmd.conf_ = sp_confidence( pyth_bid, pyth_ask );
   cmd.pub_slot_ = clock->slot_;
 

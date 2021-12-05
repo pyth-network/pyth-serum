@@ -108,6 +108,13 @@ sp_serum_to_pyth(
   return sp_pow10_divide( quote_lotsize, base_lotsize, scale_exp );
 }
 
+// Avoid overflowing with "( bid + ask ) / 2".
+static inline sp_size_t sp_midpt( const sp_size_t bid, const sp_size_t ask )
+{
+  const sp_size_t sum_mod2 = ( bid % 2 ) + ( ask % 2 );
+  return ( bid / 2 ) + ( ask / 2 ) + ( sum_mod2 / 2 );
+}
+
 // CI is half the bid-ask spread, adjusted for the best aggressive fee.
 // https://docs.pyth.network/publishers/confidence-interval-and-crypto-exchange-fees
 //

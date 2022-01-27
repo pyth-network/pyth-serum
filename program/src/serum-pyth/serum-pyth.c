@@ -269,7 +269,7 @@ static inline sp_errcode_t sp_get_pyth_instruction(
       // Safe as long as threshold_conf isn't the min int64, which it isn't as long as PRICE_CONF_THRESHOLD > 1.
       threshold_conf = -threshold_conf;
     }
-    if ( pyth_conf > threshold_conf ) {
+    if ( pyth_conf > (uint64_t) threshold_conf ) {
       trading = false;
     }
   }

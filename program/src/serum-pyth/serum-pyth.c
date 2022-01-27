@@ -243,10 +243,9 @@ static inline sp_errcode_t sp_get_pyth_instruction(
   }
 
   // Convert Serum prices into Pyth formatted prices
-  sp_size_t pyth_bid = 0;
-  sp_size_t pyth_ask = 0;
+  int64_t pyth_price = 0;
+  uint64_t pyth_conf = 0;
   if ( SP_LIKELY( trading ) ) {
-
     const sp_size_t serum_to_pyth = sp_serum_to_pyth(
       pyth_exponent,
       quote_exponent,
@@ -259,8 +258,20 @@ static inline sp_errcode_t sp_get_pyth_instruction(
       return ERROR_INVALID_ACCOUNT_DATA;
     }
 
-    pyth_bid = serum_bid * serum_to_pyth;
-    pyth_ask = serum_ask * serum_to_pyth;
+    sp_size_t pyth_bid = serum_bid * serum_to_pyth;
+    sp_size_t pyth_ask = serum_ask * serum_to_pyth;
+    pyth_price = ( int64_t ) sp_midpt( pyth_bid, pyth_ask );
+    pyth_conf = sp_confidence( pyth_bid, pyth_ask );
+
+    // status will be unknown unless the spread is sufficiently tight.
+    int64_t threshold_conf = (pyth_price / PRICE_CONF_THRESHOLD);
+    if (threshold_conf < 0) {
+      // Safe as long as threshold_conf isn't the min int64, which it isn't as long as PRICE_CONF_THRESHOLD > 1.
+      threshold_conf = -threshold_conf;
+    }
+    if ( pyth_conf > threshold_conf ) {
+      trading = false;
+    }
   }
 
   // Prepare pyth-client instruction for cross-program invocation.
@@ -269,8 +280,8 @@ static inline sp_errcode_t sp_get_pyth_instruction(
   cmd->cmd_ = e_cmd_upd_price;
   cmd->status_ = ( trading ? PC_STATUS_TRADING : PC_STATUS_UNKNOWN );
   cmd->unused_ = 0;
-  cmd->price_ = ( int64_t ) sp_midpt( pyth_bid, pyth_ask );
-  cmd->conf_ = sp_confidence( pyth_bid, pyth_ask );
+  cmd->price_ = pyth_price;
+  cmd->conf_ = pyth_conf;
   cmd->pub_slot_ = (  // TODO: Use direct syscall.
     ( const sysvar_clock_t* ) account_sysvar_clock->data
   )->slot_;

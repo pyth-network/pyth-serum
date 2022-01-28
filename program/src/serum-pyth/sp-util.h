@@ -53,6 +53,10 @@ static const sp_expo_t SP_EXP_MAX = SOL_ARRAY_SIZE( SP_POW10 ) - 1;
 static const sp_size_t SP_SIZE_OVERFLOW = UINT64_MAX;
 static const sp_size_t SP_SIZE_MAX = SP_SIZE_OVERFLOW - 1;
 
+// The feed's status will be unknown if conf > (price / this value).
+// e.g. 20 means the confidence interval is at most 5% of the price.
+static const int64_t PRICE_CONF_THRESHOLD = 20;
+
 // Calculate 10^exp * numer / denom
 static inline sp_size_t sp_pow10_divide(
   sp_size_t numer,
